@@ -46,6 +46,48 @@ const UA =
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+function canonicalImageUrl(url) {
+  return url?.replace("/image/upload/f_auto/t_UCPA/", "/image/upload/") ?? null;
+}
+
+function cardImageUrl(url, width, height) {
+  const original = canonicalImageUrl(url);
+  if (!original?.includes("/image/upload/")) return original;
+  return original.replace(
+    "/image/upload/",
+    `/image/upload/f_auto,q_auto:good,c_fill,g_auto,w_${width},h_${height}/`
+  );
+}
+
+// Cloudinary takes a few seconds to generate a never-before-seen crop. Warm
+// only newly discovered source images after a scrape, with bounded concurrency,
+// so that generation happens here instead of while the user scrolls the app.
+export async function warmImageVariants(imageUrls) {
+  const jobs = [...new Set(imageUrls.flatMap((url) => [
+    cardImageUrl(url, 250, 376),
+    cardImageUrl(url, 1200, 256),
+  ]).filter(Boolean))];
+  let next = 0;
+  let warmed = 0;
+
+  async function worker() {
+    while (next < jobs.length) {
+      const url = jobs[next++];
+      try {
+        const response = await fetch(url, { headers: { accept: "image/avif,image/webp,image/*,*/*" } });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        await response.arrayBuffer();
+        warmed++;
+      } catch (error) {
+        console.warn(`  ! image warm failed: ${error.message}`);
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(6, jobs.length) }, worker));
+  return { warmed, total: jobs.length };
+}
+
 function structuredTitles($) {
   const titles = new Map();
 
@@ -152,6 +194,10 @@ export async function runScrape({ dry = false, db } = {}) {
   }
 
   const _db = db ?? open();
+  const knownImageUrls = new Set(
+    _db.prepare("SELECT image_url FROM product WHERE image_url IS NOT NULL").all()
+      .map((row) => canonicalImageUrl(row.image_url))
+  );
   const runId = startRun(_db, SOURCES.join(" | "));
   _db.exec("BEGIN");
   for (const r of rows) upsert(_db, runId, r);
@@ -188,6 +234,17 @@ export async function runScrape({ dry = false, db } = {}) {
       console.error(`  ! ${r.code} weeks failed:`, e.message);
     }
     await sleep(DELAY_MS);
+  }
+
+  const newImageUrls = [...new Set(
+    [...details.values()]
+      .map((detail) => canonicalImageUrl(detail.image_url))
+      .filter((url) => url && !knownImageUrls.has(url))
+  )];
+  if (newImageUrls.length > 0) {
+    console.log(`warming card images for ${newImageUrls.length} new product image(s)...`);
+    const warmed = await warmImageVariants(newImageUrls);
+    console.log(`  ${warmed.warmed}/${warmed.total} image variants ready`);
   }
 
   _db.exec("BEGIN");
