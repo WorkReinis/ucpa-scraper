@@ -75,6 +75,12 @@ export default function TicketWeekListing({ d, includeFlightCosts = false, favor
             toggle();
           }
         }}>
+        <div className="ticket-image-wrap">
+          {d.image_url
+            ? <img src={d.image_url} alt="" loading="lazy" />
+            : <div className="ticket-image-fallback" aria-hidden="true"><span>{d.resort}</span></div>}
+        </div>
+        <div className="ticket-perf-v ticket-perf-image" aria-hidden="true"><span className="ticket-notch ticket-notch-top" /><span className="ticket-notch ticket-notch-end" /></div>
         <div className="ticket-trip">
           <button type="button" className={`ticket-fav${favorited ? " active" : ""}${pulse ? " pulse" : ""}`}
             onClick={handleFavoriteClick} aria-pressed={favorited} title={favorited ? "Remove from favorites" : "Save to favorites"}>

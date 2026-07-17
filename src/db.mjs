@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS product (
   -- coaching. Real hours cluster cleanly into three groups with no ambiguous
   -- values, see classifyInstruction() there.
   instruction_type     TEXT,
+  image_url            TEXT,
   first_seen          TEXT,
   last_seen           TEXT
 );
@@ -215,7 +216,7 @@ SELECT
   p.url, p.title, p.activity, p.level, p.age_min, p.age_max,
   p.country, p.resort, p.region, p.days, p.nights,
   p.includes, p.excludes, p.options, p.accommodation,
-  p.instructor_hours, p.instruction_type
+  p.instructor_hours, p.instruction_type, p.image_url
 FROM v_week_current w
 JOIN product p ON p.code = w.code;
 
@@ -250,6 +251,12 @@ function migrateLegacyNames(db) {
     const cols = db.prepare("PRAGMA table_info(observation)").all().map((c) => c.name);
     if (cols.includes("first_departure") && !cols.includes("first_week")) {
       db.exec("ALTER TABLE observation RENAME COLUMN first_departure TO first_week");
+    }
+  }
+  if (hasTable("product")) {
+    const cols = db.prepare("PRAGMA table_info(product)").all().map((c) => c.name);
+    if (!cols.includes("image_url")) {
+      db.exec("ALTER TABLE product ADD COLUMN image_url TEXT");
     }
   }
   // week.price_lyon (a single Lyon-only column) was superseded by
@@ -352,12 +359,12 @@ export function insertFlightPrice(db, r) {
 export function setProductDetails(db, code, d) {
   db.prepare(
     `UPDATE product SET includes=?, excludes=?, options=?, accommodation=?,
-                         encadrement=?, instructor_hours=?, instruction_type=?
+                         encadrement=?, instructor_hours=?, instruction_type=?, image_url=?
      WHERE code=?`
   ).run(
     JSON.stringify(d.includes ?? []), JSON.stringify(d.excludes ?? []),
     JSON.stringify(d.options ?? []), d.accommodation, d.encadrement,
-    d.instructor_hours, d.instruction_type, code
+    d.instructor_hours, d.instruction_type, d.image_url, code
   );
 }
 

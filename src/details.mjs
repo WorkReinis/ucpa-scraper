@@ -26,6 +26,10 @@ function listAfterHeading($, text) {
 export function parseDetails(html) {
   const $ = cheerio.load(html);
 
+  const image_url = $('meta[property="og:image"]').first().attr("content")
+    || $('meta[name="twitter:image"]').first().attr("content")
+    || null;
+
   const includes = listAfterHeading($, "Inclus");
   const excludes = listAfterHeading($, "Non Inclus");
   const options = listAfterHeading($, "En option");
@@ -39,7 +43,7 @@ export function parseDetails(html) {
   const instructor_hours = hoursM ? parseInt(hoursM[1], 10) : null;
 
   return {
-    includes, excludes, options, accommodation, encadrement, instructor_hours,
+    includes, excludes, options, accommodation, encadrement, instructor_hours, image_url,
     instruction_type: classifyInstruction(instructor_hours),
   };
 }
