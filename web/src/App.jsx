@@ -34,15 +34,19 @@ function totalPrice(d) {
   return d.price + (Number.isFinite(d.flight_price) ? d.flight_price : 0);
 }
 
-// /api/weeks sorts by package price server-side (src/server.mjs) -- correct
-// normally, but once flight costs are folded into the displayed price, a
-// price sort needs to follow that same combined total or the list stops
-// matching the number the user is actually looking at.
+// Sorting never changes which weeks belong in the result set, so keep it
+// entirely client-side. Besides making combined package+flight sorting
+// accurate, this avoids a redundant request/loading flash on every sort.
 function sortForDisplay(list, sort, includeFlightCosts) {
-  if (!includeFlightCosts || (sort !== "price_asc" && sort !== "price_desc")) return list;
-  const sorted = [...list].sort((a, b) => totalPrice(a) - totalPrice(b));
-  if (sort === "price_desc") sorted.reverse();
-  return sorted;
+  if (sort === "soonest") {
+    return [...list].sort((a, b) => a.start_date.localeCompare(b.start_date));
+  }
+  if (sort === "price_asc" || sort === "price_desc") {
+    const priceOf = includeFlightCosts ? totalPrice : (week) => week.price;
+    const direction = sort === "price_desc" ? -1 : 1;
+    return [...list].sort((a, b) => direction * (priceOf(a) - priceOf(b)));
+  }
+  return list;
 }
 
 const DEFAULT_FILTERS = {
@@ -102,6 +106,16 @@ export default function App() {
     getFilters().then(setMeta).catch((e) => setError(e.message));
   }, []);
 
+  const dataFilterKey = JSON.stringify({
+    resort: filters.resort,
+    activity: filters.activity,
+    tier: filters.tier,
+    instructionType: filters.instructionType,
+    minPrice: filters.minPrice,
+    maxPrice: filters.maxPrice,
+    month: filters.month,
+  });
+
   useEffect(() => {
     const id = ++requestId.current;
     // Debounced so a burst of changes (typing a price, clicking several
@@ -110,7 +124,7 @@ export default function App() {
     // was the actual source of the flicker, not the loading indicator itself.
     const t = setTimeout(() => {
       setLoading(true);
-      getWeeks(filters)
+      getWeeks({ ...JSON.parse(dataFilterKey), sort: "price_asc" })
         .then((data) => {
           if (id === requestId.current) setWeeks(data);
         })
@@ -122,7 +136,7 @@ export default function App() {
         });
     }, 200);
     return () => clearTimeout(t);
-  }, [filters]);
+  }, [dataFilterKey]);
 
   // A changed filter, sort, or the favorites-only view starts the listing
   // from the top again. This avoids carrying a previously expanded result
