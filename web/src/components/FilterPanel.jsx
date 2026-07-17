@@ -54,6 +54,7 @@ function Toggle({ checked, onChange, children }) {
 export default function FilterPanel({
   meta, value, onChange,
   includeFlightCosts, onIncludeFlightCostsChange,
+  showFlightToggle = true,
   favOnly, onFavOnlyChange, favCount,
 }) {
   const set = (patch) => onChange({ ...value, ...patch });
@@ -136,9 +137,9 @@ export default function FilterPanel({
       </Collapsible>
 
       <div className="filter-panel-switches">
-        <Toggle checked={includeFlightCosts} onChange={onIncludeFlightCostsChange}>
+        {showFlightToggle && <Toggle checked={includeFlightCosts} onChange={onIncludeFlightCostsChange}>
           Include flight costs
-        </Toggle>
+        </Toggle>}
         <Toggle checked={favOnly} onChange={onFavOnlyChange}>
           Favorites only{favCount > 0 && <span className="switch-count">{favCount}</span>}
         </Toggle>

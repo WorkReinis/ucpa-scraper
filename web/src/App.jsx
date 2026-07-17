@@ -63,6 +63,11 @@ const SORTS = [
 ];
 
 const LISTINGS_PER_PAGE = 20;
+// Ticket cards are now the product UI. The legacy card and its selector stay
+// wired behind this flag so the comparison view can be restored without
+// reconstructing it.
+const SHOW_CARD_VIEW_SWITCH = false;
+const SHOW_FLIGHT_COST_TOGGLE = false;
 
 function hasActiveFilters(filters, favOnly) {
   return (
@@ -82,11 +87,11 @@ export default function App() {
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
   const [weeks, setWeeks] = useState([]);
   const [visibleWeeks, setVisibleWeeks] = useState(LISTINGS_PER_PAGE);
-  const [includeFlightCosts, setIncludeFlightCosts] = useState(false);
+  const [includeFlightCosts, setIncludeFlightCosts] = useState(true);
   const [favorites, toggleFavorite] = useFavorites();
   const [favOnly, setFavOnly] = useState(false);
   const [layout, setLayout] = useState("compact");
-  const [cardView, setCardView] = useState("standard");
+  const [cardView, setCardView] = useState("ticket");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [tasks, setTasks] = useState([]);
@@ -255,6 +260,7 @@ export default function App() {
               onChange={setFilters}
               includeFlightCosts={includeFlightCosts}
               onIncludeFlightCostsChange={setIncludeFlightCosts}
+              showFlightToggle={SHOW_FLIGHT_COST_TOGGLE}
               favOnly={favOnly}
               onFavOnlyChange={setFavOnly}
               favCount={favorites.length}
@@ -267,10 +273,10 @@ export default function App() {
                 nothing to show yet, so results never flash to empty and back. */}
             <div className="results-toolbar">
               <div className="results-toolbar-left">
-                <div className="results-view-tabs" role="tablist" aria-label="Card design">
+                {SHOW_CARD_VIEW_SWITCH && <div className="results-view-tabs" role="tablist" aria-label="Card design">
                   <button type="button" role="tab" aria-selected={cardView === "standard"} className={cardView === "standard" ? "active" : ""} onClick={() => setCardView("standard")}>Standard</button>
                   <button type="button" role="tab" aria-selected={cardView === "ticket"} className={cardView === "ticket" ? "active" : ""} onClick={() => setCardView("ticket")}>Tickets</button>
-                </div>
+                </div>}
                 <div className="muted small">
                   {meta ? `${displayedWeeks.length} of ${favFilteredWeeks.length} listings` : "Loading…"}
                 </div>
