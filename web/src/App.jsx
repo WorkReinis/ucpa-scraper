@@ -207,7 +207,9 @@ export default function App() {
           <div className="brand">
             <span className="logo-mark">
               <svg width="18" height="18" viewBox="0 0 32 32" fill="none" aria-hidden="true">
-                <path d="M6 22L13 13L17 17L26 7" stroke="#fff" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M3.5 24.5 12.7 9.8l4.7 7.1 3.1-4.3 8 11.9h-25Z" fill="#fff" fillOpacity="0.96" />
+                <path d="m9.8 14.4 2.9-4.6 3.1 4.7-3-1.6-3 1.5Z" fill="#b8d7ff" />
+                <path d="m17.4 16.9 3.1-4.3 3 4.5-3-1.5-3.1 1.3Z" fill="#b8d7ff" />
               </svg>
             </span>
             <span className="brand-text">UCPA Tracker</span>
