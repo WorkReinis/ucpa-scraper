@@ -151,7 +151,7 @@
 
 .app-footer-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 1px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) 1px minmax(0, 1fr) minmax(220px, auto);
   align-items: center;
   gap: 24px;
   width: 100%;
@@ -231,12 +231,33 @@
 
 .refresh-tracker-times b { color: var(--text-h); font-weight: 550; }
 
-.refresh-timezone {
-  color: var(--text);
-  font-size: 10px;
-  opacity: 0.64;
-  white-space: nowrap;
+.footer-brand {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 9px;
+  min-width: 0;
+  text-align: right;
 }
+
+.footer-brand-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  border-radius: 10px;
+  background: var(--logo-grad);
+  color: #fff;
+  box-shadow: 0 5px 14px rgba(91, 141, 239, 0.2);
+}
+
+.footer-brand-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.footer-brand-copy strong { color: var(--text-h); font-size: 11px; font-weight: 650; }
+.footer-brand-copy span { color: var(--text); font-size: 9px; line-height: 1.35; opacity: 0.72; }
+.footer-brand-copy a { color: inherit; text-underline-offset: 2px; }
+.footer-brand-copy a:hover { color: var(--accent); }
 
 .notice-banner {
   width: 100%;
@@ -346,7 +367,7 @@
 @media (max-width: 960px) {
   .app-body { grid-template-columns: 1fr; }
   .app-footer-row { grid-template-columns: minmax(0, 1fr) 1px minmax(0, 1fr); }
-  .refresh-timezone { grid-column: 1 / -1; text-align: right; }
+  .footer-brand { grid-column: 1 / -1; justify-content: flex-end; }
 }
 
 /* --- filter panel --- */
@@ -1140,8 +1161,8 @@
 @media (max-width: 660px) {
   .app-footer-row { grid-template-columns: 1fr; gap: 16px; padding-block: 20px; }
   .app-footer-row::before { display: none; }
-  .refresh-tracker:nth-of-type(2), .refresh-timezone { grid-column: 1; }
-  .refresh-timezone { text-align: left; }
+  .refresh-tracker:nth-of-type(2), .footer-brand { grid-column: 1; }
+  .footer-brand { justify-content: flex-start; text-align: left; }
   .ticket-main { display: block; height: auto; }
   .ticket-image-wrap { height: 128px; min-height: 0; }
   .ticket-perf-v { height: 1px; background: repeating-linear-gradient(90deg, var(--ticket-hairline) 0 5px, transparent 5px 11px); }
