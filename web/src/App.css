@@ -945,6 +945,7 @@
 .ticket-main { display: grid; grid-template-columns: 125px 1px minmax(0, 1fr) 1px 235px; height: 188px; cursor: pointer; }
 .ticket-main:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .ticket-image-wrap { position: relative; min-height: 188px; overflow: hidden; background: var(--ticket-soft); }
+.ticket-image-wrap picture { position: absolute; inset: 0; }
 .ticket-image-wrap img { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: cover; }
 .ticket-image-fallback { position: absolute; inset: 0; display: flex; align-items: flex-end; padding: 14px; background: linear-gradient(150deg, #d9e8f7, #8ca9c5 58%, #496780); color: #fff; }
 .ticket-image-fallback::before { content: ""; position: absolute; inset: 28% -12% -20%; background: linear-gradient(145deg, transparent 48%, rgba(255,255,255,0.36) 49% 56%, transparent 57%), linear-gradient(35deg, transparent 46%, rgba(30,64,90,0.25) 47% 62%, transparent 63%); }

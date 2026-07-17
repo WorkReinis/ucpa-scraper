@@ -26,9 +26,14 @@ function listAfterHeading($, text) {
 export function parseDetails(html) {
   const $ = cheerio.load(html);
 
-  const image_url = $('meta[property="og:image"]').first().attr("content")
+  const scrapedImageUrl = $('meta[property="og:image"]').first().attr("content")
     || $('meta[name="twitter:image"]').first().attr("content")
     || null;
+  // Keep Cloudinary's original asset path, not UCPA's generic t_UCPA
+  // rendition. The card requests its own desktop/mobile sizes from that
+  // original, so a tiny preset is never stretched and every browser can get
+  // WebP/AVIF through f_auto.
+  const image_url = scrapedImageUrl?.replace("/image/upload/f_auto/t_UCPA/", "/image/upload/") ?? null;
 
   const includes = listAfterHeading($, "Inclus");
   const excludes = listAfterHeading($, "Non Inclus");

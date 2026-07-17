@@ -44,6 +44,15 @@ function barcodeCode(d) {
   return `${resort} · ${day}${MONTHS[Number(month) - 1]?.toUpperCase() || ""}${year.slice(-2)}`;
 }
 
+function cardImageUrl(url, width, height) {
+  if (!url?.includes("/image/upload/")) return url;
+  const original = url.replace("/image/upload/f_auto/t_UCPA/", "/image/upload/");
+  return original.replace(
+    "/image/upload/",
+    `/image/upload/f_auto,q_auto:good,c_fill,g_auto,w_${width},h_${height}/`
+  );
+}
+
 export default function TicketWeekListing({ d, includeFlightCosts = false, favorited = false, onToggleFavorite }) {
   const [open, setOpen] = useState(false);
   const [pulse, setPulse] = useState(false);
@@ -83,7 +92,10 @@ export default function TicketWeekListing({ d, includeFlightCosts = false, favor
         }}>
         <div className="ticket-image-wrap">
           {d.image_url
-            ? <img src={d.image_url} alt="" loading="lazy" />
+            ? <picture>
+                <source media="(min-width: 661px)" srcSet={cardImageUrl(d.image_url, 250, 376)} />
+                <img src={cardImageUrl(d.image_url, 1200, 256)} alt="" loading="lazy" />
+              </picture>
             : <div className="ticket-image-fallback" aria-hidden="true"><span>{d.resort}</span></div>}
           <button type="button" className={`ticket-fav${favorited ? " active" : ""}${pulse ? " pulse" : ""}`}
             onClick={handleFavoriteClick} aria-pressed={favorited} title={favorited ? "Remove from favorites" : "Save to favorites"}>
