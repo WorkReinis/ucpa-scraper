@@ -90,6 +90,20 @@ flight-only, both, and a non-publishing dry run. A failed scrape or build never
 replaces the last deployed site or the rolling database. Successful databases
 are also retained as workflow artifacts for 14 days.
 
+### Import safety
+
+Hosted catalogue refreshes validate all remote data before writing anything:
+
+- every product card must produce a known activity, level, region, resort, title, and whole-euro price;
+- each source is compared with its previous successful count, and a drop above 15% is rejected;
+- any unparseable product card rejects the refresh;
+- availability JSON must contain valid `offersInfo` dates, stock, duration, and whole-euro prices;
+- missing images, included-item lists, or accommodation count as detail failures, with a maximum tolerated rate of 10%;
+- anomalous public HTML/JSON and a scrape summary are retained as private workflow artifacts for 14 days;
+- validated catalogue, week, detail, and source-count rows commit in one SQLite transaction.
+
+SerpApi responses are schema-checked too. Every outbound segment and carrier is retained. Carrier data is explicitly labelled outbound-only because resolving the return selection requires another billable search; the app does not present the first response as if it described both directions.
+
 For a local preview of the exact hosted data path:
 
 ```bash
@@ -98,13 +112,12 @@ npm run verify:static
 $env:VITE_STATIC_DATA="1"; npm run build --prefix web
 ```
 
-### Flight prices (Trip cost tab)
+### Flight prices
 
-The frontend's second tab shows each week's true cost from the Netherlands:
-package price + the cheapest round-trip flight (Amsterdam/Rotterdam →
-Lyon/Geneva/Zurich/Turin/Toulouse, flying out the day before each week
-starts), quoted from Google Flights via [SerpApi](https://serpapi.com) —
-free tier, 250 searches/month.
+Ticket prices combine the UCPA package with the cheapest round-trip flight
+from Amsterdam/Rotterdam to Lyon/Geneva/Zurich/Turin/Toulouse, flying out the
+day before the package starts. Quotes come from Google Flights through
+[SerpApi](https://serpapi.com).
 
 Put the key in `.env` at the repo root (gitignored; Node loads it natively
 via `--env-file-if-exists`, no dotenv package — needs Node ≥ 22.9):
@@ -113,33 +126,17 @@ via `--env-file-if-exists`, no dotenv package — needs Node ≥ 22.9):
 SERPAPI_KEY=your-key-here
 ```
 
-```bash
-npm run server    # picks up .env; tab's "Refresh flights" button now works
-npm run flights   # same refresh from the CLI
-```
+Run `npm run flights` locally for a manual refresh. Hosted refreshes run from
+the scheduled workflow; there are no public scrape or flight buttons.
 
 One search prices the whole airport cross-product (2 origins × 5
 destinations) for one (start, end) date pair at once, and every product
-sharing that week shares the quote — the current catalogue is 22 distinct
-weeks across the whole Nov–Apr season, so ~11 full refreshes fit in a free
-month.
+sharing that week shares the quote.
 Quotes are append-only in `flight_price` (price history for free, like
-everything else here); pairs quoted within the last 24h are skipped, so the
-button is safe to spam. Without `SERPAPI_KEY` the tab still renders with
-package-only prices and a banner.
-
-Zurich caveat: UCPA never offers Swiss pickups and no shuttle company serves
-these resorts from Zurich (`src/airports.mjs`), so a ZRH-arriving quote is
-flagged "own transfer needed" — cheapest flight ≠ cheapest door-to-door.
-Geneva/Turin/Toulouse don't need that flag: each is a real shuttle-served
-airport for at least one current resort, with actual scheduled AMS/RTM
-service confirmed live — Geneva (Chamonix, Val d'Isère, Tignes, Val Thorens,
-Les Arcs), Turin (Grand Serre Chevalier, via direct KLM flights + Linkbus'
-Turin–Briançon–Serre Chevalier shuttle), Toulouse (Saint-Lary Soulan, via
-KLM/Transavia/budget carriers + the seasonal "SkiGo" ski-shuttle coach).
-Grenoble was the other Serre-Chevalier-area candidate — it has a real
-shuttle market too, but it's a UK/Poland charter airport with no
-Amsterdam/Rotterdam service, so it's not in `DEST_AIRPORTS`.
+everything else here). The ledger permits two attempts per date pair per ISO
+week and enforces a hard ceiling of 225 SerpApi requests per calendar month.
+Without a current quote, the ticket keeps its package price and links to a
+manual Google Flights search.
 
 ## Why the schema looks like that
 
@@ -149,8 +146,7 @@ full-time snowboard week it was last winter. Keep the code as the primary key
 and you get year-over-year comparison for free, which is the one thing the
 website will never give you. (A "week" here is a specific bookable date
 range of a product -- deliberately not called a "departure" anymore, since
-that word now also means a literal flight departure once the Trip cost tab
-started tracking real ones; see below.)
+that word now also means a literal flight departure in the ticket data.)
 
 `observation` (one row per product per scrape) and `week` (one row per
 product **per specific week** per scrape) are both **append-only**. Never
@@ -159,9 +155,8 @@ week, as a side effect. That's what makes "is -10% Early Booking actually
 good, or does it go to -25% in January, and did that specific week ever sell
 out?" an answerable question — the real reason to build this. `v_current` and
 `v_week_current` give you the latest snapshot of each without thinking
-about it; `v_product_summary` (what the frontend queries) rolls each
-product's weeks up into "cheapest open week / how many sold out /
-soonest available."
+about it; `v_week_listing` is the flattened product-and-week dataset exported
+to the frontend.
 
 The code itself decomposes: `sfa` + 3-letter site + variant. `sfa`**`vis`**`n03`
 = Val d'Isère, `sfa`**`sla`**`n07` = Saint-Lary, `sfa`**`vth`**`ne5` = Val
@@ -169,17 +164,8 @@ Thorens. That's inferred from ~12 samples, not documented — `site_code` is sto
 but treat it as a hint. `se`/`ne` in the variant seems to mark the discounted
 "Happy Winter" / special-offer SKUs.
 
-**Every UCPA transport pickup city is captured, not just Lyon.** UCPA
-bundles optional transport from ~20 cities — French domestic (Paris, Lyon,
-Clermont-Ferrand, Mulhouse, Toulouse...) plus occasional Belgian/
-Luxembourgish ones (Brussels, Luxembourg) — one priced offer per city per
-date, each a complete "package + that city's transport" total, not a
-supplement on top. `week_transport` (`src/db.mjs`) holds one row per
-(product, week, city); Zurich is never one of them (UCPA doesn't run Swiss
-pickups at all). Brussels/Luxembourg are the interesting ones for a
-Netherlands traveler — close enough that the sensible way there is the train
-UCPA already bundles, not a flight, so they need no `flights.mjs` support at
-all to be useful.
+`flight_price` is separate and append-only. It is keyed by outbound and return
+dates because every package sharing the same week can reuse one flight quote.
 
 ## Parsing
 
@@ -213,9 +199,8 @@ Saint-Lary at 499 € looks like it beats Val d'Isère at 837 € by a mile; add
 Pyrenees transfer from Den Haag (~420 €) against rail-to-Bourg-St-Maurice
 (~260 €) and it's 960 vs 998 — a rounding error. Fill in `TRAVEL_FROM_NL` in
 `report.mjs` with real quotes and the sort order starts meaning something.
-(`week_transport` is the piece of this UCPA prices for you directly, for
-every city it offers a pickup from — and the Trip cost tab now automates the
-flight half with live Google Flights quotes, see above.)
+The tickets add the current Google Flights quote separately, while package
+price filters remain based on the UCPA price alone.
 
 Also note `Ski ou snowboard Pack Mini` is filed under `activity = Ski alpin` but
 takes boarders — filtering on the activity column alone loses it. The filter

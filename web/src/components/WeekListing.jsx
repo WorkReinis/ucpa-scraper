@@ -57,7 +57,7 @@ export default function WeekListing({ d, includeFlightCosts = false, compact = f
   const flightInfo = [
     { icon: IconCalendar, label: fmtDate(d.flight_depart_date) },
     { icon: IconPlane, label: d.flight_dep && d.flight_arr ? `${d.flight_dep} → ${d.flight_arr}` : null },
-    { icon: IconTicket, label: d.flight_airline },
+    { icon: IconTicket, label: d.flight_airline ? `${d.flight_airline} outbound` : null },
     { icon: IconClock, label: fmtMinutes(d.flight_duration_min) },
   ].filter((item) => item.label);
 

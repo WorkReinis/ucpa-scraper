@@ -10,6 +10,8 @@
 // widget's empty state before the fetch above fires, not a real sold-out flag.
 // Ignore it; the JSON is authoritative.
 
+import { writeDiagnostic } from "./diagnostics.mjs";
+
 const RESERVE_SRC_RE = /<amp-state\s+id="reserve"\s+src="([^"]+)"/;
 
 /** Pull the reserve-state API URL out of a product page's raw HTML. */
@@ -23,8 +25,13 @@ export function extractReserveUrl(html) {
 /** "29/11/2026" -> "2026-11-29". Built from dF rather than the unix `date`
  *  field so there's no timezone rounding to get wrong. */
 function isoFromDF(dF) {
+  if (!/^\d{2}\/\d{2}\/\d{4}$/.test(dF ?? "")) throw new Error(`invalid offer date: ${dF ?? "null"}`);
   const [dd, mm, yyyy] = dF.split("/");
-  return `${yyyy}-${mm}-${dd}`;
+  const iso = `${yyyy}-${mm}-${dd}`;
+  if (new Date(`${iso}T00:00:00Z`).toISOString().slice(0, 10) !== iso) {
+    throw new Error(`invalid offer date: ${dF}`);
+  }
+  return iso;
 }
 
 function addDays(iso, days) {
@@ -54,7 +61,11 @@ function addDays(iso, days) {
  * separately, below, into one row per (date, city).
  */
 export function parseOffers(json, code) {
-  const offers = json?.offersInfo ?? [];
+  if (!json || typeof json !== "object" || !Array.isArray(json.offersInfo)) {
+    throw new Error("reserve response is missing offersInfo[]");
+  }
+  const offers = json.offersInfo;
+  if (offers.length === 0) throw new Error("reserve response contains no offers");
   const byDate = new Map();
 
   const rowFor = (o, start) =>
@@ -73,16 +84,30 @@ export function parseOffers(json, code) {
   for (const o of offers) {
     if (o.transInc) continue; // handled below
     const start = isoFromDF(o.dF);
+    const price = Number(o.price);
+    const listPrice = o.prePrice == null ? null : Number(o.prePrice);
+    if (!Number.isFinite(price) || price <= 0) throw new Error(`invalid offer price for ${o.dF}`);
+    if (listPrice != null && (!Number.isFinite(listPrice) || listPrice <= 0)) {
+      throw new Error(`invalid offer list price for ${o.dF}`);
+    }
+    if (o.pN != null && (!Number.isInteger(Number(o.pN)) || Number(o.pN) <= 0)) {
+      throw new Error(`invalid offer duration for ${o.dF}`);
+    }
+    if (o.available_stock != null && (!Number.isInteger(Number(o.available_stock)) || Number(o.available_stock) < 0)) {
+      throw new Error(`invalid available stock for ${o.dF}`);
+    }
     byDate.set(start, {
       ...rowFor(o, start),
-      price: o.price ?? null,
-      list_price: o.prePrice ?? null,
+      price: Math.ceil(price),
+      list_price: listPrice == null ? null : Math.ceil(listPrice),
       discount_pct: o.promo ?? 0,
       status: o.status?.message ?? null,
       seats_left: o.available_stock ?? null,
       booked: o.booked_stock ?? null,
     });
   }
+
+  if (byDate.size === 0) throw new Error("reserve response contains no package-only offers");
 
   // Transport-inclusive offers are deliberately ignored. The app tracks the
   // package's comparable hors-transport price only; it does not model or
@@ -106,8 +131,8 @@ export async function fetchWeeks(code, productUrl, ua) {
 
   const reserveUrl = extractReserveUrl(html);
   if (!reserveUrl) {
-    console.warn(`  ! no reserve state on ${productUrl} -- page layout may have changed`);
-    return { html, weeks: [] };
+    writeDiagnostic(`${code}-missing-reserve-state`, html, "html");
+    throw new Error(`no reserve state on ${productUrl} -- page layout may have changed`);
   }
 
   const json = await fetch(reserveUrl, {
@@ -122,6 +147,12 @@ export async function fetchWeeks(code, productUrl, ua) {
     return r.json();
   });
 
-  const { weeks } = parseOffers(json, code);
+  let weeks;
+  try {
+    ({ weeks } = parseOffers(json, code));
+  } catch (error) {
+    writeDiagnostic(`${code}-invalid-reserve-response`, json, "json");
+    throw error;
+  }
   return { html, weeks };
 }

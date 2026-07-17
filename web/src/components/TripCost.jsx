@@ -37,12 +37,12 @@ function googleFlightsUrl(d) {
 }
 
 function FlightLine({ d }) {
-  if (d.flight_fetched_at == null) return <div className="muted small">no flight data yet — hit Refresh flights</div>;
+  if (d.flight_fetched_at == null) return <div className="muted small">no flight data yet</div>;
   if (d.flight_price == null) return <div className="muted small">no flights found for these dates · checked {fmtAgo(d.flight_fetched_at)}</div>;
 
   return (
     <div className="muted small">
-      {IconPlane} Fly out {fmtDate(d.flight_depart_date)} · {d.flight_dep} → {d.flight_arr} · {d.flight_airline}
+      {IconPlane} Fly out {fmtDate(d.flight_depart_date)} · {d.flight_dep} → {d.flight_arr} · {d.flight_airline} outbound
       {d.flight_stops != null && <> · {d.flight_stops === 0 ? "direct" : `${d.flight_stops} stop${d.flight_stops === 1 ? "" : "s"}`}</>}
       {d.flight_duration_min != null && <> · {fmtMinutes(d.flight_duration_min)}</>}
       {" "}· round trip {fmtPrice(d.flight_price)} · quoted {fmtAgo(d.flight_fetched_at)}

@@ -75,7 +75,7 @@ CREATE INDEX IF NOT EXISTS idx_obs_code ON observation(code, observed_at);
 -- Append-only like observation -- one row per (code, start_date, observed_at),
 -- never UPDATE a price. price/list_price/discount_pct are always hors
 -- transport (matches the listing cards) -- UCPA's own bundled-transport
--- prices live in week_transport below, one row per pickup city.
+-- transport-inclusive variants are deliberately not stored.
 CREATE TABLE IF NOT EXISTS week (
   code                TEXT NOT NULL,
   start_date          TEXT NOT NULL,
@@ -117,6 +117,8 @@ CREATE TABLE IF NOT EXISTS flight_price (
   airline        TEXT,
   stops          INTEGER,         -- outbound leg; 0 = direct
   duration_min   INTEGER,         -- outbound leg, minutes
+  outbound_segments TEXT,         -- JSON array; every outbound segment
+  details_scope  TEXT NOT NULL DEFAULT 'outbound',
   price_level    TEXT,            -- Google's own read: low / typical / high
   PRIMARY KEY (origins, dests, outbound_date, return_date, fetched_at)
 );
@@ -137,6 +139,15 @@ CREATE TABLE IF NOT EXISTS flight_search (
 );
 CREATE INDEX IF NOT EXISTS idx_flight_search_policy
   ON flight_search(billing_month, week_key, outbound_date, return_date);
+
+CREATE TABLE IF NOT EXISTS source_snapshot (
+  run_id            INTEGER NOT NULL REFERENCES run(id),
+  source_url        TEXT NOT NULL,
+  product_count     INTEGER NOT NULL,
+  candidate_count   INTEGER NOT NULL,
+  unparseable_count INTEGER NOT NULL,
+  PRIMARY KEY (run_id, source_url)
+);
 `;
 
 // Views hold no data of their own -- just saved queries -- so unlike the
@@ -275,11 +286,17 @@ function migrateLegacyNames(db) {
       db.exec("ALTER TABLE product ADD COLUMN image_url TEXT");
     }
   }
-  // week.price_lyon (a single Lyon-only column) was superseded by
-  // week_transport (every pickup city UCPA offers, Lyon included) -- see
-  // that table's own comment. Drop it from DBs that predate the change;
-  // the history it held isn't worth preserving since week_transport's own
-  // scrape will re-populate Lyon (and everything else) going forward.
+  if (hasTable("flight_price")) {
+    const cols = db.prepare("PRAGMA table_info(flight_price)").all().map((c) => c.name);
+    if (!cols.includes("outbound_segments")) {
+      db.exec("ALTER TABLE flight_price ADD COLUMN outbound_segments TEXT");
+    }
+    if (!cols.includes("details_scope")) {
+      db.exec("ALTER TABLE flight_price ADD COLUMN details_scope TEXT NOT NULL DEFAULT 'outbound'");
+    }
+  }
+  // Remove a legacy Lyon-only transport-price column. Transport-inclusive
+  // UCPA routes are no longer part of this application.
   if (hasTable("week")) {
     const cols = db.prepare("PRAGMA table_info(week)").all().map((c) => c.name);
     if (cols.includes("price_lyon")) {
@@ -362,11 +379,13 @@ export function insertFlightPrice(db, r) {
   db.prepare(
     `INSERT INTO flight_price
        (origins, dests, outbound_date, return_date, fetched_at,
-        price, dep_airport, arr_airport, airline, stops, duration_min, price_level)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
+        price, dep_airport, arr_airport, airline, stops, duration_min,
+        outbound_segments, details_scope, price_level)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
   ).run(
     r.origins, r.dests, r.outbound_date, r.return_date, new Date().toISOString(),
-    r.price, r.dep_airport, r.arr_airport, r.airline, r.stops, r.duration_min, r.price_level
+    r.price, r.dep_airport, r.arr_airport, r.airline, r.stops, r.duration_min,
+    JSON.stringify(r.outbound_segments ?? []), r.details_scope ?? "outbound", r.price_level
   );
 }
 
@@ -400,4 +419,12 @@ export function setProductDetails(db, code, d) {
 
 export function finishRun(db, runId, n) {
   db.prepare("UPDATE run SET n_products = ? WHERE id = ?").run(n, runId);
+}
+
+export function insertSourceSnapshot(db, runId, snapshot) {
+  db.prepare(
+    `INSERT INTO source_snapshot
+       (run_id, source_url, product_count, candidate_count, unparseable_count)
+     VALUES (?, ?, ?, ?, ?)`
+  ).run(runId, snapshot.source, snapshot.count, snapshot.candidateCount, snapshot.unparseableCount);
 }

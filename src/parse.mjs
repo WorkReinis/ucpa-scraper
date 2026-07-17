@@ -22,11 +22,11 @@ export const ACTIVITIES = [
 const num = (s) =>
   s == null
     ? null
-    : parseFloat(
+    : Math.ceil(parseFloat(
         String(s)
           .replace(/[\s\u00a0\u202f]/g, "")
           .replace(",", ".")
-      );
+      ));
 
 /** "29/11" + a season anchor -> ISO date. Nov/Dec belong to the earlier year. */
 export function resolveDate(dd, mm, seasonStartYear) {

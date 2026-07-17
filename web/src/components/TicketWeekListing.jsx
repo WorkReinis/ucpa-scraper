@@ -38,6 +38,12 @@ function googleFlightsUrl(d) {
   return `https://www.google.com/travel/flights?q=${encodeURIComponent(query)}`;
 }
 
+function outboundRoute(d) {
+  const segments = d.flight_outbound_segments ?? [];
+  if (segments.length > 0) return [segments[0].from, ...segments.map((segment) => segment.to)].join(" → ");
+  return d.flight_dep && d.flight_arr ? `${d.flight_dep} → ${d.flight_arr}` : null;
+}
+
 function barcodeCode(d) {
   const resort = (d.resort || d.code || "UCPA").replace(/[^a-z0-9]/gi, "").slice(0, 3).toUpperCase();
   const [year = "", month = "", day = ""] = (d.start_date || "").split("-");
@@ -63,8 +69,9 @@ export default function TicketWeekListing({ d, includeFlightCosts = false, favor
   const googleFlights = googleFlightsUrl(d);
   const compactFlightLine = [
     `${fmtShortDate(d.flight_depart_date)} – ${fmtShortDate(d.flight_return_date, true)}`,
-    d.flight_dep && d.flight_arr ? `${d.flight_dep} ⇄ ${d.flight_arr}` : null,
-    d.flight_airline,
+    outboundRoute(d),
+    d.flight_airline ? `${d.flight_airline} outbound` : null,
+    d.flight_stops != null ? (d.flight_stops === 0 ? "direct" : `${d.flight_stops} stop${d.flight_stops === 1 ? "" : "s"}`) : null,
     fmtMinutes(d.flight_duration_min),
   ].filter(Boolean).join(" · ");
 

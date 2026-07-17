@@ -20,7 +20,7 @@ import { LEVEL_TIERS } from "./levels.mjs";
 // Mirrors translate.mjs's region rules (CATEGORICAL_RULES) -- kept as its own
 // list rather than imported, since translate.mjs is a substitution table with
 // no notion of "known" vs "unknown" values.
-const KNOWN_REGIONS = ["Alpes du Nord", "Alpes du Sud", "Pyrénées", "Vallée du Mont Blanc"];
+export const KNOWN_REGIONS = ["Alpes du Nord", "Alpes du Sud", "Pyrénées", "Vallée du Mont Blanc"];
 
 const KNOWN = {
   activity: new Set([...ACTIVITIES, "Ski ou snowboard"]), // retagged dual-discipline packages, see parse.mjs

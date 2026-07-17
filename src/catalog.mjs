@@ -6,6 +6,7 @@ import { findUnknownCategories } from "./categories.mjs";
 function translateListing(row) {
   return {
     ...row,
+    flight_outbound_segments: JSON.parse(row.flight_outbound_segments || "[]"),
     activity_groups: groupsOf(row.activity),
     tier: tierOf(row.level),
     title: translate(row.title),
@@ -117,6 +118,8 @@ export function getWeeksData(db, q = {}) {
            fp.price AS flight_price, fp.dep_airport AS flight_dep, fp.arr_airport AS flight_arr,
            fp.airline AS flight_airline, fp.stops AS flight_stops,
            fp.duration_min AS flight_duration_min, fp.fetched_at AS flight_fetched_at,
+           fp.outbound_segments AS flight_outbound_segments,
+           fp.details_scope AS flight_details_scope,
            fp.outbound_date AS flight_depart_date, fp.return_date AS flight_return_date
     FROM v_week_listing wl
     LEFT JOIN v_week_delta wd ON wd.code = wl.code AND wd.start_date = wl.start_date

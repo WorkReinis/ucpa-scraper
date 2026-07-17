@@ -2,8 +2,8 @@
 // node src/scrape.mjs --dry      -> parse and print, write nothing
 //
 // Snapshots the catalogue into ucpa.db. Safe to run daily via cron, or via
-// the "Scrape now" button in the frontend (src/server.mjs's POST
-// /api/scrape calls runScrape() below directly) -- both paths share this
+// the local API (src/server.mjs's POST /api/scrape calls runScrape() below
+// directly) -- both paths share this
 // exact logic, nothing is duplicated between CLI and server.
 //
 // Each run appends rows rather than overwriting: product upserts (keyed on
@@ -16,12 +16,17 @@
 // genuine price or seat-count change between two runs.
 
 import { fileURLToPath } from "node:url";
+import fs from "node:fs";
 import * as cheerio from "cheerio";
 import { parseCard } from "./parse.mjs";
-import { open, startRun, upsert, finishRun, upsertWeek, setProductDetails } from "./db.mjs";
+import {
+  open, startRun, upsert, finishRun, upsertWeek, setProductDetails, insertSourceSnapshot,
+} from "./db.mjs";
 import { fetchWeeks } from "./weeks.mjs";
 import { parseDetails } from "./details.mjs";
 import { findUnknownCategories } from "./categories.mjs";
+import { assertDetailFailureRate, detailIssues, productIssues, sourceIssues } from "./validation.mjs";
+import { writeDiagnostic } from "./diagnostics.mjs";
 
 // --- config ----------------------------------------------------------------
 // Path shape is /activites/{duree}/{activite}. "semaine" = 7d packages.
@@ -126,6 +131,7 @@ async function getCards(url) {
   const titles = structuredTitles($);
   const out = [];
   const seen = new Set();
+  const invalid = [];
   for (const el of $('a[href*="/sejour/"]').toArray()) {
     const href = $(el).attr("href");
     const text = $(el).text();
@@ -134,19 +140,40 @@ async function getCards(url) {
     if (text.length < 80 || seen.has(href)) continue;
     seen.add(href);
     const code = href.match(/\/sejour\/([a-z0-9]+)-/i)?.[1]?.toLowerCase();
-    const row = parseCard(href, text, code ? titles.get(code) : null);
-    if (row) out.push(row);
-    else console.warn("  ! unparseable:", href);
+    const canonicalTitle = code ? titles.get(code) : null;
+    const row = parseCard(href, text, canonicalTitle);
+    const issues = row ? productIssues(row) : ["card parser returned no product"];
+    if (row && !canonicalTitle) issues.push("missing canonical JSON-LD title");
+    if (issues.length === 0) {
+      out.push(row);
+    } else {
+      invalid.push({ href, issues, parsed: row });
+      console.warn(`  ! invalid product card: ${href} (${issues.join("; ")})`);
+    }
   }
-  return out;
+  if (invalid.length > 0) {
+    const tag = new URL(url).pathname.split("/").at(-1) + `-p${new URL(url).searchParams.get(PAGE_PARAM) ?? 1}`;
+    writeDiagnostic(`${tag}-invalid-cards`, html, "html");
+    writeDiagnostic(`${tag}-invalid-cards`, invalid, "json");
+  }
+  return {
+    rows: out,
+    candidateHrefs: [...seen],
+    invalidHrefs: invalid.map((item) => item.href),
+  };
 }
 
 /** Walk pages until the codes stop changing (works whether or not ?page= is real). */
 async function crawl(base) {
   const all = new Map();
+  const candidateHrefs = new Set();
+  const invalidHrefs = new Set();
   for (let page = 1; page <= MAX_PAGES; page++) {
     const url = page === 1 ? base : `${base}?${PAGE_PARAM}=${page}`;
-    const rows = await getCards(url);
+    const pageResult = await getCards(url);
+    const rows = pageResult.rows;
+    pageResult.candidateHrefs.forEach((href) => candidateHrefs.add(href));
+    pageResult.invalidHrefs.forEach((href) => invalidHrefs.add(href));
     const fresh = rows.filter((r) => !all.has(r.code));
 
     console.log(`  p${page}: ${rows.length} cards, ${fresh.length} new`);
@@ -165,7 +192,11 @@ async function crawl(base) {
     if (rows.length === 0) break;
     await sleep(DELAY_MS);
   }
-  return [...all.values()];
+  return {
+    rows: [...all.values()],
+    candidateCount: candidateHrefs.size,
+    unparseableCount: invalidHrefs.size,
+  };
 }
 
 /**
@@ -176,16 +207,31 @@ async function crawl(base) {
  * per-product weeks.
  */
 export async function runScrape({ dry = false, db, strict = false } = {}) {
+  const _db = db ?? open();
   const collected = new Map();
   const sourceFailures = [];
+  const sourceSnapshots = [];
+  const previousSourceCount = _db.prepare(
+    `SELECT product_count FROM source_snapshot
+     WHERE source_url = ? ORDER BY run_id DESC LIMIT 1`
+  );
   for (const src of SOURCES) {
     console.log(`\n${src}`);
     try {
-      const sourceRows = await crawl(src);
-      if (sourceRows.length === 0) {
-        sourceFailures.push({ source: src, error: "no products returned" });
-      }
-      for (const r of sourceRows) collected.set(r.code, r);
+      const result = await crawl(src);
+      const snapshot = {
+        source: src,
+        count: result.rows.length,
+        candidateCount: result.candidateCount,
+        unparseableCount: result.unparseableCount,
+      };
+      sourceSnapshots.push(snapshot);
+      const issues = sourceIssues({
+        ...snapshot,
+        previousCount: previousSourceCount.get(src)?.product_count ?? null,
+      });
+      if (issues.length > 0) sourceFailures.push({ source: src, error: issues.join("; ") });
+      for (const r of result.rows) collected.set(r.code, r);
     } catch (e) {
       console.error("  ! failed:", e.message);
       sourceFailures.push({ source: src, error: e.message });
@@ -195,39 +241,33 @@ export async function runScrape({ dry = false, db, strict = false } = {}) {
   const rows = [...collected.values()];
   console.log(`\n${rows.length} distinct products.`);
 
+  const previousTotal = _db.prepare(
+    "SELECT n_products FROM run WHERE n_products IS NOT NULL ORDER BY id DESC LIMIT 1"
+  ).get()?.n_products;
+  const totalIssues = sourceIssues({
+    count: rows.length, previousCount: previousTotal, unparseableCount: 0,
+  });
+  if (totalIssues.length > 0) {
+    sourceFailures.push({ source: "combined catalogue", error: totalIssues.join("; ") });
+  }
+
   if (strict && sourceFailures.length > 0) {
-    throw new Error(
+    const error = new Error(
       `strict scrape rejected ${sourceFailures.length} source failure(s): ` +
       sourceFailures.map((failure) => failure.source).join(", ")
     );
+    error.summary = { products: rows.length, sourceFailures, sourceSnapshots, detailFailures: [] };
+    throw error;
   }
 
   if (dry) {
-    return { dry: true, products: rows.length, rows, sourceFailures };
+    return { dry: true, products: rows.length, rows, sourceFailures, sourceSnapshots };
   }
 
-  const _db = db ?? open();
   const knownImageUrls = new Set(
     _db.prepare("SELECT image_url FROM product WHERE image_url IS NOT NULL").all()
       .map((row) => canonicalImageUrl(row.image_url))
   );
-  const runId = startRun(_db, SOURCES.join(" | "));
-  _db.exec("BEGIN");
-  for (const r of rows) upsert(_db, runId, r);
-  _db.exec("COMMIT");
-  finishRun(_db, runId, rows.length);
-  console.log(`run #${runId} written to ucpa.db`);
-
-  // Catches UCPA adding a new activity/level/region before anything else in
-  // this codebase would notice -- see src/categories.mjs for why that
-  // otherwise fails silently instead of erroring.
-  const unknownCategories = findUnknownCategories(_db);
-  for (const [col, values] of Object.entries(unknownCategories)) {
-    console.warn(
-      `  ! ${values.length} unclassified ${col} value(s) -- add to src/${col === "level" ? "levels" : "categories"}.mjs: ${values.join(", ")}`
-    );
-  }
-
   // Per-product week calendar + package details: two extra requests each
   // (product page, then its reserve-state JSON), same DELAY_MS between
   // products as the listing crawl above -- this doubles request count but
@@ -243,7 +283,14 @@ export async function runScrape({ dry = false, db, strict = false } = {}) {
       const { html, weeks: weekRows } = await fetchWeeks(r.code, r.url, UA);
       console.log(`  ${r.code}: ${weekRows.length} weeks`);
       weeks.push(...weekRows);
-      details.set(r.code, parseDetails(html));
+      const parsedDetails = parseDetails(html);
+      const issues = detailIssues(parsedDetails);
+      if (issues.length > 0) {
+        writeDiagnostic(`${r.code}-incomplete-details`, html, "html");
+        detailFailures.push({ code: r.code, error: issues.join("; ") });
+      } else {
+        details.set(r.code, parsedDetails);
+      }
     } catch (e) {
       console.error(`  ! ${r.code} weeks failed:`, e.message);
       detailFailures.push({ code: r.code, error: e.message });
@@ -251,12 +298,14 @@ export async function runScrape({ dry = false, db, strict = false } = {}) {
     await sleep(DELAY_MS);
   }
 
-  const detailFailureRate = rows.length === 0 ? 1 : detailFailures.length / rows.length;
-  if (strict && detailFailureRate > 0.1) {
-    throw new Error(
-      `strict scrape rejected ${detailFailures.length}/${rows.length} ` +
-      `week/detail failures (${Math.round(detailFailureRate * 100)}%)`
-    );
+  let detailFailureRate;
+  try {
+    detailFailureRate = strict
+      ? assertDetailFailureRate(detailFailures.length, rows.length)
+      : (rows.length === 0 ? 1 : detailFailures.length / rows.length);
+  } catch (error) {
+    error.summary = { products: rows.length, sourceFailures, sourceSnapshots, detailFailures };
+    throw error;
   }
 
   const newImageUrls = [...new Set(
@@ -270,15 +319,27 @@ export async function runScrape({ dry = false, db, strict = false } = {}) {
     console.log(`  ${warmed.warmed}/${warmed.total} image variants ready`);
   }
 
+  let runId;
   _db.exec("BEGIN");
-  for (const w of weeks) upsertWeek(_db, w);
-  for (const [code, d] of details) setProductDetails(_db, code, d);
-  _db.exec("COMMIT");
-  console.log(`${weeks.length} week rows, ${details.size} product detail sets written.`);
+  try {
+    runId = startRun(_db, SOURCES.join(" | "));
+    for (const r of rows) upsert(_db, runId, r);
+    for (const w of weeks) upsertWeek(_db, w);
+    for (const [code, d] of details) setProductDetails(_db, code, d);
+    for (const snapshot of sourceSnapshots) insertSourceSnapshot(_db, runId, snapshot);
+    finishRun(_db, runId, rows.length);
+    _db.exec("COMMIT");
+  } catch (error) {
+    _db.exec("ROLLBACK");
+    throw error;
+  }
+  console.log(`run #${runId}: ${rows.length} products, ${weeks.length} weeks, ${details.size} detail sets written.`);
+
+  const unknownCategories = findUnknownCategories(_db);
 
   return {
     dry: false, runId, products: rows.length, weeks: weeks.length,
-    details: details.size, unknownCategories, sourceFailures, detailFailures,
+    details: details.size, detailFailureRate, unknownCategories, sourceFailures, sourceSnapshots, detailFailures,
   };
 }
 
@@ -287,13 +348,24 @@ export async function runScrape({ dry = false, db, strict = false } = {}) {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const dry = process.argv.includes("--dry");
   const strict = process.argv.includes("--strict");
-  const result = await runScrape({ dry, strict });
-  if (result.dry) {
-    console.table(
-      result.rows.map((r) => ({
-        code: r.code, resort: r.resort, activity: r.activity,
-        level: r.level, price: r.price, off: r.discount_pct, from: r.first_week_dm,
-      }))
+  try {
+    const result = await runScrape({ dry, strict });
+    const summary = { ...result };
+    delete summary.rows;
+    fs.writeFileSync(".scrape-summary.json", `${JSON.stringify(summary, null, 2)}\n`);
+    if (result.dry) {
+      console.table(
+        result.rows.map((r) => ({
+          code: r.code, resort: r.resort, activity: r.activity,
+          level: r.level, price: r.price, off: r.discount_pct, from: r.first_week_dm,
+        }))
+      );
+    }
+  } catch (error) {
+    fs.writeFileSync(
+      ".scrape-summary.json",
+      `${JSON.stringify({ error: error.message, ...error.summary }, null, 2)}\n`
     );
+    throw error;
   }
 }

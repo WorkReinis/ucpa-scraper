@@ -1,7 +1,6 @@
 // node src/flights.mjs -> refresh round-trip flight quotes for upcoming weeks
 //
-// Google Flights via SerpApi (free tier: 250 searches/month, cached repeats
-// within the hour are free). One search covers every airport combo at once --
+// Google Flights via SerpApi. One search covers every airport combo at once --
 // departure_id/arrival_id both take comma-separated lists -- so a refresh
 // costs one search per distinct upcoming (start, end) week in the week
 // calendar, ~25-40 for a full Nov-Apr season. Quotes land append-only in
@@ -18,19 +17,15 @@ import {
   startFlightSearch,
   finishFlightSearch,
 } from "./db.mjs";
+import { writeDiagnostic } from "./diagnostics.mjs";
+import { wholePrice } from "./validation.mjs";
 
 // Origins are fixed (Amsterdam + Rotterdam); destinations are the
 // fly-to-the-Alps-or-Pyrenees candidates from the user's side. Google prices
 // the whole cross-product in one search and we keep whichever itinerary is
-// cheapest -- adding a destination here costs nothing extra query-wise, it's
-// still one search. Note Zurich has no shuttle market to any current resort
-// (src/airports.mjs) -- the frontend flags a ZRH-arriving quote as "own
-// transfer needed". Geneva/Turin/Toulouse don't need that flag: each is a
-// real shuttle-served airport for at least one current resort (Geneva:
-// Chamonix, Val d'Isère, Tignes, Val Thorens, Les Arcs; Turin: Grand Serre
-// Chevalier; Toulouse: Saint-Lary Soulan) with actual scheduled AMS/RTM
-// service, researched live -- see airports.mjs's header comment for why
-// Grenoble, the other Serre-Chevalier-area candidate, didn't make this list.
+// cheapest -- adding a destination here costs nothing extra query-wise, since
+// it remains one search. Transfer suitability is deliberately outside this
+// flight-price model.
 const ORIGIN_AIRPORTS = "AMS,RTM";
 const DEST_AIRPORTS = "LYS,ZRH,GVA,TRN,TLS";
 
@@ -93,11 +88,41 @@ async function searchFlights(outboundDate, returnDate, apiKey) {
   const j = await res.json().catch(() => ({}));
   if (!res.ok || j.error) throw new Error(j.error || `HTTP ${res.status} from SerpApi`);
 
+  try {
+    return parseFlightResponse(j, { outboundDate, returnDate });
+  } catch (error) {
+    writeDiagnostic(
+      `flights-${outboundDate}-${returnDate}-invalid-response`, j, "json", { secrets: [apiKey] }
+    );
+    throw error;
+  }
+}
+
+export function parseFlightResponse(j, { outboundDate, returnDate }) {
+  if (!j || typeof j !== "object" || Array.isArray(j)) throw new Error("invalid SerpApi response object");
+  if (j.best_flights != null && !Array.isArray(j.best_flights)) throw new Error("best_flights is not an array");
+  if (j.other_flights != null && !Array.isArray(j.other_flights)) throw new Error("other_flights is not an array");
+  if (j.search_metadata?.status && j.search_metadata.status !== "Success") {
+    throw new Error(`SerpApi search status is ${j.search_metadata.status}`);
+  }
+  const hasFlightArrays = Array.isArray(j.best_flights) || Array.isArray(j.other_flights);
+  const identifiesEngine = j.search_parameters?.engine === "google_flights";
+  if (!hasFlightArrays && !identifiesEngine) throw new Error("response is not recognizable Google Flights data");
+
   // For type=1 the price on each itinerary is already the round-trip total;
   // the departure_token follow-up only adds return-leg *details*, which we
   // don't store. flights[] is the outbound leg's segments.
-  const itineraries = [...(j.best_flights ?? []), ...(j.other_flights ?? [])]
+  const rawItineraries = [...(j.best_flights ?? []), ...(j.other_flights ?? [])]
     .filter((it) => it.price != null);
+  const itineraries = rawItineraries.filter((it) => {
+    const legs = it.flights;
+    return wholePrice(it.price) > 0 && Array.isArray(legs) && legs.length > 0 && legs.every((leg) =>
+      leg?.departure_airport?.id && leg?.arrival_airport?.id && leg?.airline
+    );
+  });
+  if (rawItineraries.length > 0 && itineraries.length === 0) {
+    throw new Error("flight itineraries exist but do not match the expected schema");
+  }
 
   const row = {
     origins: ORIGIN_AIRPORTS,
@@ -110,20 +135,32 @@ async function searchFlights(outboundDate, returnDate, apiKey) {
     airline: null,
     stops: null,
     duration_min: null,
+    outbound_segments: [],
+    details_scope: "outbound",
     price_level: j.price_insights?.price_level ?? null,
   };
   if (!itineraries.length) return row;
 
   const best = itineraries.reduce((a, b) => (b.price < a.price ? b : a));
   const legs = best.flights ?? [];
+  const outboundSegments = legs.map((leg) => ({
+    from: leg.departure_airport.id,
+    to: leg.arrival_airport.id,
+    airline: leg.airline,
+    flight_number: leg.flight_number ?? null,
+    departure_at: leg.departure_airport.time ?? null,
+    arrival_at: leg.arrival_airport.time ?? null,
+    duration_min: Number.isFinite(Number(leg.duration)) ? Number(leg.duration) : null,
+  }));
   return {
     ...row,
-    price: best.price,
+    price: wholePrice(best.price),
     dep_airport: legs[0]?.departure_airport?.id ?? null,
     arr_airport: legs.at(-1)?.arrival_airport?.id ?? null,
-    airline: legs[0]?.airline ?? null,
+    airline: [...new Set(legs.map((leg) => leg.airline).filter(Boolean))].join(" + ") || null,
     stops: legs.length ? legs.length - 1 : null,
-    duration_min: best.total_duration ?? null,
+    duration_min: Number.isFinite(Number(best.total_duration)) ? Math.round(Number(best.total_duration)) : null,
+    outbound_segments: outboundSegments,
   };
 }
 

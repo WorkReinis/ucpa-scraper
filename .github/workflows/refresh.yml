@@ -38,6 +38,7 @@ jobs:
     env:
       OPERATION: ${{ github.event_name == 'schedule' && 'both' || inputs.operation }}
       SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
+      SCRAPE_DIAGNOSTICS_DIR: .scrape-diagnostics
     steps:
       - uses: actions/checkout@v4
         with:
@@ -125,6 +126,17 @@ jobs:
           retention-days: 14
           if-no-files-found: error
 
+      - name: Upload scrape diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scrape-diagnostics-${{ github.run_id }}
+          path: |
+            .scrape-diagnostics/
+            .scrape-summary.json
+          retention-days: 14
+          if-no-files-found: ignore
+
       - name: Publish rolling data branch
         if: env.OPERATION != 'dry-run' && steps.deployment.outcome == 'success'
         shell: bash
@@ -138,10 +150,15 @@ jobs:
           git push --force origin HEAD:data
 
       - name: Job summary
-        if: env.OPERATION != 'dry-run'
+        if: always() && env.OPERATION != 'dry-run'
         shell: bash
         run: |
           echo "## UCPA scheduled refresh" >> "$GITHUB_STEP_SUMMARY"
-          jq -r '"- Products: \(.products)\n- Listings: \(.listings)\n- Last scrape: \(.lastScrapedAt)\n- Last flight check: \(.lastFlightsRefreshAt)\n- Flight quota: \(.flightQuota.used)/\(.flightQuota.limit)\n- Unknown category groups: \(.unknownCategoryGroups)"' .refresh-summary.json >> "$GITHUB_STEP_SUMMARY"
+          if test -f .scrape-summary.json; then
+            jq -r '"- Catalogue: \(if .error then "failed - " + .error else "passed" end)\n- Products: \(.products // 0)\n- Source failures: \(.sourceFailures // [] | length)\n- Detail warnings: \(.detailFailures // [] | length)"' .scrape-summary.json >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if test -f .refresh-summary.json; then
+            jq -r '"- Listings: \(.listings)\n- Last scrape: \(.lastScrapedAt)\n- Last flight check: \(.lastFlightsRefreshAt)\n- Flight quota: \(.flightQuota.used)/\(.flightQuota.limit)\n- Unknown category groups: \(.unknownCategoryGroups)"' .refresh-summary.json >> "$GITHUB_STEP_SUMMARY"
+          fi
           echo "- Flight step: ${{ steps.flights.outcome }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Site: ${{ steps.deployment.outputs.page_url }}" >> "$GITHUB_STEP_SUMMARY"
+          if test -n "${{ steps.deployment.outputs.page_url }}"; then echo "- Site: ${{ steps.deployment.outputs.page_url }}" >> "$GITHUB_STEP_SUMMARY"; fi

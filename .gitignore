@@ -4,8 +4,10 @@ ucpa.db
 ucpa.db-*
 probe/
 scrape.log
+.scrape-diagnostics/
 web/dist/
 web/public/data/
 .refresh-summary.json
+.scrape-summary.json
 .claude/
 ucpa.db.bak-*
