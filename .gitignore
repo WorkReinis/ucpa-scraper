@@ -1,0 +1,11 @@
+node_modules/
+.env
+ucpa.db
+ucpa.db-*
+probe/
+scrape.log
+web/dist/
+web/public/data/
+.refresh-summary.json
+.claude/
+ucpa.db.bak-*

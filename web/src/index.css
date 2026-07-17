@@ -1,0 +1,65 @@
+:root {
+  --text: #334155;
+  --text-h: #1e293b;
+  --bg: #f5f8fd;
+  --page-gradient: radial-gradient(1100px 480px at 50% -260px, rgba(124, 168, 240, 0.22), transparent 70%), #f5f8fd;
+  --bg-card: #ffffff;
+  --border: rgba(15, 23, 42, 0.08);
+  --line: rgba(15, 23, 42, 0.08);
+  --accent: #5b8def;
+  --accent-bg: #eef4ff;
+  --accent-border: #cadeff;
+  --hover: rgba(91, 141, 239, 0.06);
+  --danger: #e11d48;
+  --danger-bg: #ffe4e6;
+  --green: #16a34a;
+  --green-bg: #dcfce7;
+  --amber: #d97706;
+  --amber-bg: rgba(217, 119, 6, 0.12);
+
+  --header-bg: rgba(245, 248, 253, 0.78);
+  --header-line: rgba(30, 64, 175, 0.1);
+  --logo-grad: linear-gradient(150deg, #8fc0ff, #5b8def);
+  --radius: 20px;
+  --radius-sm: 11px;
+  --seg-bg: #eaeef4;
+  --seg-border: rgba(15, 23, 42, 0.06);
+  --seg-active-bg: #ffffff;
+  --seg-active-fg: #1e293b;
+  --seg-fg: #64748b;
+  --skel-1: #eef1f6;
+  --skel-2: #f8fafc;
+  --primary-bg: #1e293b;
+  --primary-text: #ffffff;
+  --card-shadow: 0 4px 16px -8px rgba(30, 64, 175, 0.18);
+  --card-shadow-open: 0 16px 40px -12px rgba(30, 64, 175, 0.28);
+
+  --sans: 'Geist', system-ui, 'Segoe UI', Roboto, sans-serif;
+  --mono: ui-monospace, Consolas, monospace;
+
+  font: 15px/1.5 var(--sans);
+  color-scheme: light;
+  color: var(--text);
+  background: var(--page-gradient);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* { box-sizing: border-box; }
+
+body { margin: 0; }
+
+h1, h2, h3, h4 {
+  font-family: var(--sans);
+  font-weight: 600;
+  color: var(--text-h);
+  margin: 0 0 8px;
+}
+
+p { margin: 0; }
+
+.muted { color: var(--text); opacity: 0.7; }
+.small { font-size: 12px; }
+.warn { color: var(--amber); }

@@ -175,22 +175,35 @@ async function crawl(base) {
  * `dry: true` parses and returns rows without touching the DB or fetching
  * per-product weeks.
  */
-export async function runScrape({ dry = false, db } = {}) {
+export async function runScrape({ dry = false, db, strict = false } = {}) {
   const collected = new Map();
+  const sourceFailures = [];
   for (const src of SOURCES) {
     console.log(`\n${src}`);
     try {
-      for (const r of await crawl(src)) collected.set(r.code, r);
+      const sourceRows = await crawl(src);
+      if (sourceRows.length === 0) {
+        sourceFailures.push({ source: src, error: "no products returned" });
+      }
+      for (const r of sourceRows) collected.set(r.code, r);
     } catch (e) {
       console.error("  ! failed:", e.message);
+      sourceFailures.push({ source: src, error: e.message });
     }
   }
 
   const rows = [...collected.values()];
   console.log(`\n${rows.length} distinct products.`);
 
+  if (strict && sourceFailures.length > 0) {
+    throw new Error(
+      `strict scrape rejected ${sourceFailures.length} source failure(s): ` +
+      sourceFailures.map((failure) => failure.source).join(", ")
+    );
+  }
+
   if (dry) {
-    return { dry: true, products: rows.length, rows };
+    return { dry: true, products: rows.length, rows, sourceFailures };
   }
 
   const _db = db ?? open();
@@ -224,6 +237,7 @@ export async function runScrape({ dry = false, db } = {}) {
   console.log(`\nfetching week calendars for ${rows.length} products...`);
   const weeks = [];
   const details = new Map();
+  const detailFailures = [];
   for (const r of rows) {
     try {
       const { html, weeks: weekRows } = await fetchWeeks(r.code, r.url, UA);
@@ -232,8 +246,17 @@ export async function runScrape({ dry = false, db } = {}) {
       details.set(r.code, parseDetails(html));
     } catch (e) {
       console.error(`  ! ${r.code} weeks failed:`, e.message);
+      detailFailures.push({ code: r.code, error: e.message });
     }
     await sleep(DELAY_MS);
+  }
+
+  const detailFailureRate = rows.length === 0 ? 1 : detailFailures.length / rows.length;
+  if (strict && detailFailureRate > 0.1) {
+    throw new Error(
+      `strict scrape rejected ${detailFailures.length}/${rows.length} ` +
+      `week/detail failures (${Math.round(detailFailureRate * 100)}%)`
+    );
   }
 
   const newImageUrls = [...new Set(
@@ -255,7 +278,7 @@ export async function runScrape({ dry = false, db } = {}) {
 
   return {
     dry: false, runId, products: rows.length, weeks: weeks.length,
-    details: details.size, unknownCategories,
+    details: details.size, unknownCategories, sourceFailures, detailFailures,
   };
 }
 
@@ -263,7 +286,8 @@ export async function runScrape({ dry = false, db } = {}) {
 // (`node src/scrape.mjs`), not when imported by src/server.mjs.
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const dry = process.argv.includes("--dry");
-  const result = await runScrape({ dry });
+  const strict = process.argv.includes("--strict");
+  const result = await runScrape({ dry, strict });
   if (result.dry) {
     console.table(
       result.rows.map((r) => ({

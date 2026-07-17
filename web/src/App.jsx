@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { getFilters, getWeeks, triggerScrape, triggerFlightRefresh } from "./api";
+import { getFilters, getWeeks } from "./api";
 import FilterPanel from "./components/FilterPanel";
 import ActiveFilters from "./components/ActiveFilters";
 import WeekListing from "./components/WeekListing";
 import TicketWeekListing from "./components/TicketWeekListing";
-import TaskPanel from "./components/TaskPanel";
 import useFavorites from "./useFavorites";
+import { filterFavoriteWeeks } from "./staticCatalog";
 import { IconLayoutCompact, IconLayoutDetailed, IconSearch } from "./icons";
 import "./App.css";
 
@@ -14,13 +14,6 @@ function fmtTimestamp(iso) {
   return new Date(iso).toLocaleString(undefined, {
     day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
   });
-}
-
-// { activity: [...], level: [...], region: [...] } (src/categories.mjs) ->
-// ", 2 new level(s) not yet classified" or "" when clean.
-function unknownCategoriesNote(unknown) {
-  if (!unknown || Object.keys(unknown).length === 0) return "";
-  return `, ${Object.entries(unknown).map(([col, vals]) => `${vals.length} new ${col}(s)`).join(", ")} not yet classified`;
 }
 
 function weekKey(d) {
@@ -98,9 +91,7 @@ export default function App() {
   const [cardView, setCardView] = useState("ticket");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [tasks, setTasks] = useState([]);
   const requestId = useRef(0);
-  const taskIdRef = useRef(0);
 
   useEffect(() => {
     getFilters().then(setMeta).catch((e) => setError(e.message));
@@ -145,72 +136,18 @@ export default function App() {
     setVisibleWeeks(LISTINGS_PER_PAGE);
   }, [filters, favOnly]);
 
-  // A fresh scrape or flight refresh can add data the filter panel doesn't
-  // know about yet (resorts/months, lastFlightsRefreshAt), and definitely
-  // changes the listing itself.
-  async function reloadData() {
-    const [freshMeta, freshWeeks] = await Promise.all([getFilters(), getWeeks(filters)]);
-    setMeta(freshMeta);
-    setWeeks(freshWeeks);
-  }
-
-  // Shared task tray for the two long-running operations (scrape, flight
-  // refresh) -- both take ~1-2 min, so a disabled button alone isn't enough
-  // feedback. `fn` resolves to the summary string shown once done; a done
-  // task clears itself, an error sticks around until the user dismisses it
-  // (missing SERPAPI_KEY etc. shouldn't just vanish after 6 seconds).
-  function runTask(kind, label, fn) {
-    const id = ++taskIdRef.current;
-    setTasks((ts) => [...ts, { id, kind, label, status: "running", detail: null }]);
-    fn()
-      .then((detail) => {
-        setTasks((ts) => ts.map((t) => (t.id === id ? { ...t, status: "done", detail } : t)));
-        setTimeout(() => setTasks((ts) => ts.filter((t) => t.id !== id)), 6000);
-      })
-      .catch((e) => {
-        setTasks((ts) => ts.map((t) => (t.id === id ? { ...t, status: "error", detail: e.message } : t)));
-      });
-  }
-
-  function dismissTask(id) {
-    setTasks((ts) => ts.filter((t) => t.id !== id));
-  }
-
   function handleClearAll() {
     setFilters(DEFAULT_FILTERS);
     setFavOnly(false);
   }
 
-  const scraping = tasks.some((t) => t.kind === "scrape" && t.status === "running");
-  const flightsRefreshing = tasks.some((t) => t.kind === "flights" && t.status === "running");
-  const flightsConfigured = Boolean(meta?.flightsConfigured);
   const sortedWeeks = sortForDisplay(weeks, filters.sort, includeFlightCosts);
-  const favFilteredWeeks = favOnly ? sortedWeeks.filter((d) => favorites.includes(weekKey(d))) : sortedWeeks;
+  const favFilteredWeeks = filterFavoriteWeeks(sortedWeeks, favorites, favOnly);
   const displayedWeeks = favFilteredWeeks.slice(0, visibleWeeks);
   const remainingWeeks = Math.max(favFilteredWeeks.length - displayedWeeks.length, 0);
   const showSkeleton = loading && weeks.length === 0;
   const showEmpty = !loading && favFilteredWeeks.length === 0;
   const filtersActive = hasActiveFilters(filters, favOnly);
-
-  function handleScrape() {
-    runTask("scrape", "Scraping UCPA catalogue", async () => {
-      const result = await triggerScrape();
-      await reloadData();
-      return `${result.products} products, ${result.weeks} weeks${unknownCategoriesNote(result.unknownCategories)}`;
-    });
-  }
-
-  function handleFlightsRefresh() {
-    runTask("flights", "Refreshing flight prices", async () => {
-      const r = await triggerFlightRefresh();
-      await reloadData();
-      return (
-        `${r.searched} searched, ${r.skipped} still fresh` +
-        (r.noResult ? `, ${r.noResult} without flights` : "") +
-        (r.failed ? `, ${r.failed} failed` : "")
-      );
-    });
-  }
 
   if (error) return <div className="error">Failed to load: {error}</div>;
 
@@ -232,15 +169,6 @@ export default function App() {
             <div className="scrape-meta">
               <span className="nav-meta">Last scrape <span>{fmtTimestamp(meta?.lastScrapedAt)}</span></span>
               <span className="nav-meta">Last flight check <span>{fmtTimestamp(meta?.lastFlightsRefreshAt)}</span></span>
-            </div>
-            <div className="scrape-buttons">
-              <button type="button" className="nav-button" onClick={handleFlightsRefresh} disabled={flightsRefreshing || !flightsConfigured}
-                title={flightsConfigured ? undefined : "Needs a SERPAPI_KEY in the server's environment"}>
-                {flightsRefreshing ? "Refreshing…" : "Refresh flights"}
-              </button>
-              <button type="button" className="nav-button nav-button-primary" onClick={handleScrape} disabled={scraping}>
-                {scraping ? "Scraping…" : "Scrape now"}
-              </button>
             </div>
           </div>
         </div>
@@ -368,7 +296,6 @@ export default function App() {
         </div>
       </div>
 
-      <TaskPanel tasks={tasks} onDismiss={dismissTask} />
     </div>
   );
 }

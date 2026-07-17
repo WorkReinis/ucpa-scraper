@@ -1,0 +1,147 @@
+name: Refresh UCPA catalogue
+
+on:
+  schedule:
+    - cron: "15 7 * 1-4,8-12 *"
+      timezone: Europe/Riga
+    - cron: "15 7 * 5-7 1"
+      timezone: Europe/Riga
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: What should run?
+        required: true
+        default: both
+        type: choice
+        options:
+          - both
+          - catalogue
+          - flights
+          - dry-run
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: ucpa-pages
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    env:
+      OPERATION: ${{ github.event_name == 'schedule' && 'both' || inputs.operation }}
+      SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Restore scraper database
+        shell: bash
+        run: |
+          if ! git fetch origin data; then
+            echo "::error::The data branch is missing. Run npm run data:init once from the computer holding ucpa.db."
+            exit 1
+          fi
+          git show origin/data:ucpa.db > ucpa.db
+          test -s ucpa.db
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            web/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm ci --prefix web
+
+      - name: Catalogue dry run
+        if: env.OPERATION == 'dry-run'
+        run: npm run dry -- --strict
+
+      - name: Refresh catalogue
+        if: env.OPERATION == 'catalogue' || env.OPERATION == 'both'
+        run: npm run scrape -- --strict
+
+      - name: Refresh weekly flights
+        id: flights
+        if: env.OPERATION == 'flights' || env.OPERATION == 'both'
+        continue-on-error: true
+        run: npm run flights
+
+      - name: Stop after dry run
+        if: env.OPERATION == 'dry-run'
+        run: |
+          echo "## UCPA dry run" >> "$GITHUB_STEP_SUMMARY"
+          echo "No database or deployment was changed." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Export and verify static catalogue
+        if: env.OPERATION != 'dry-run'
+        run: |
+          npm run export:static
+          npm run verify:static
+
+      - name: Test and lint
+        if: env.OPERATION != 'dry-run'
+        run: |
+          npm test
+          npm run lint --prefix web
+
+      - name: Build hosted app
+        if: env.OPERATION != 'dry-run'
+        run: npm run build --prefix web
+        env:
+          VITE_STATIC_DATA: "1"
+          VITE_BASE_PATH: /${{ github.event.repository.name }}/
+
+      - uses: actions/configure-pages@v5
+        if: env.OPERATION != 'dry-run'
+      - uses: actions/upload-pages-artifact@v3
+        if: env.OPERATION != 'dry-run'
+        with:
+          path: web/dist
+      - name: Deploy
+        id: deployment
+        if: env.OPERATION != 'dry-run'
+        uses: actions/deploy-pages@v4
+
+      - name: Back up successful database
+        if: env.OPERATION != 'dry-run' && steps.deployment.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ucpa-db-${{ github.run_id }}
+          path: ucpa.db
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Publish rolling data branch
+        if: env.OPERATION != 'dry-run' && steps.deployment.outcome == 'success'
+        shell: bash
+        run: |
+          cp ucpa.db /tmp/ucpa.db
+          git switch --orphan data-publish
+          git rm -rf .
+          cp /tmp/ucpa.db ucpa.db
+          git add -f ucpa.db
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "refresh scraper database"
+          git push --force origin HEAD:data
+
+      - name: Job summary
+        if: env.OPERATION != 'dry-run'
+        shell: bash
+        run: |
+          echo "## UCPA scheduled refresh" >> "$GITHUB_STEP_SUMMARY"
+          jq -r '"- Products: \(.products)\n- Listings: \(.listings)\n- Last scrape: \(.lastScrapedAt)\n- Last flight check: \(.lastFlightsRefreshAt)\n- Flight quota: \(.flightQuota.used)/\(.flightQuota.limit)\n- Unknown category groups: \(.unknownCategoryGroups)"' .refresh-summary.json >> "$GITHUB_STEP_SUMMARY"
+          echo "- Flight step: ${{ steps.flights.outcome }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Site: ${{ steps.deployment.outputs.page_url }}" >> "$GITHUB_STEP_SUMMARY"

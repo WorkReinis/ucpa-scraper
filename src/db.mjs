@@ -121,6 +121,22 @@ CREATE TABLE IF NOT EXISTS flight_price (
   PRIMARY KEY (origins, dests, outbound_date, return_date, fetched_at)
 );
 CREATE INDEX IF NOT EXISTS idx_flight_dates ON flight_price(outbound_date, return_date);
+
+-- Every SerpApi request attempt, including failures. This is the quota source
+-- of truth: failed HTTP requests may still consume provider quota, so counting
+-- only stored flight quotes would under-report usage.
+CREATE TABLE IF NOT EXISTS flight_search (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  outbound_date  TEXT NOT NULL,
+  return_date    TEXT NOT NULL,
+  attempted_at   TEXT NOT NULL,
+  week_key       TEXT NOT NULL,
+  billing_month  TEXT NOT NULL,
+  status         TEXT NOT NULL,
+  error          TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_flight_search_policy
+  ON flight_search(billing_month, week_key, outbound_date, return_date);
 `;
 
 // Views hold no data of their own -- just saved queries -- so unlike the
@@ -352,6 +368,20 @@ export function insertFlightPrice(db, r) {
     r.origins, r.dests, r.outbound_date, r.return_date, new Date().toISOString(),
     r.price, r.dep_airport, r.arr_airport, r.airline, r.stops, r.duration_min, r.price_level
   );
+}
+
+export function startFlightSearch(db, { outboundDate, returnDate, weekKey, billingMonth }) {
+  const attemptedAt = new Date().toISOString();
+  const result = db.prepare(
+    `INSERT INTO flight_search
+       (outbound_date, return_date, attempted_at, week_key, billing_month, status)
+     VALUES (?, ?, ?, ?, ?, 'started')`
+  ).run(outboundDate, returnDate, attemptedAt, weekKey, billingMonth);
+  return Number(result.lastInsertRowid);
+}
+
+export function finishFlightSearch(db, id, status, error = null) {
+  db.prepare("UPDATE flight_search SET status = ?, error = ? WHERE id = ?").run(status, error, id);
 }
 
 /** Package composition (src/details.mjs) -- static per-product, so a plain

@@ -1,0 +1,28 @@
+{
+  "name": "ucpa-tracker",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "seed": "node seed.mjs && node src/report.mjs",
+    "probe": "node src/probe.mjs",
+    "scrape": "node src/scrape.mjs",
+    "dry": "node src/scrape.mjs --dry",
+    "flights": "node --env-file-if-exists=.env src/flights.mjs",
+    "export:static": "node src/export-static.mjs",
+    "verify:static": "node src/verify-static.mjs",
+    "test": "node --test",
+    "data:init": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/init-data-branch.ps1",
+    "report": "node src/report.mjs",
+    "moves": "node src/report.mjs --moves",
+    "server": "node --env-file-if-exists=.env src/server.mjs",
+    "web": "npm run dev --prefix web",
+    "dev": "node --env-file-if-exists=.env web/dev-server.mjs"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0",
+    "express": "^5.2.1"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
