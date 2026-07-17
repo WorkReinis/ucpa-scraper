@@ -16,6 +16,39 @@ function fmtTimestamp(iso) {
   });
 }
 
+function nextScheduledRefresh(now = new Date()) {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Europe/Riga",
+      year: "numeric",
+      month: "numeric",
+      day: "numeric",
+      hour: "numeric",
+      minute: "numeric",
+      hourCycle: "h23",
+    }).formatToParts(now).filter(({ type }) => type !== "literal").map(({ type, value }) => [type, Number(value)])
+  );
+  const localDay = Date.UTC(parts.year, parts.month - 1, parts.day);
+  const hasRunToday = parts.hour > 7 || (parts.hour === 7 && parts.minute >= 15);
+
+  for (let offset = 0; offset <= 7; offset += 1) {
+    const candidate = new Date(localDay + offset * 86_400_000);
+    const month = candidate.getUTCMonth() + 1;
+    const runsToday = month <= 4 || month >= 8 || candidate.getUTCDay() === 1;
+    if (runsToday && (offset > 0 || !hasRunToday)) {
+      const date = new Intl.DateTimeFormat(undefined, {
+        timeZone: "UTC",
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      }).format(candidate);
+      return `${date}, 07:15`;
+    }
+  }
+
+  return "—";
+}
+
 function weekKey(d) {
   return `${d.code}-${d.start_date}`;
 }
@@ -163,12 +196,9 @@ export default function App() {
                 <path d="m17.4 16.9 3.1-4.3 3 4.5-3-1.5-3.1 1.3Z" fill="#b8d7ff" />
               </svg>
             </span>
-            <span className="brand-text">UCPA Tracker</span>
-          </div>
-          <div className="scrape-controls">
-            <div className="scrape-meta">
-              <span className="nav-meta">Last scrape <span>{fmtTimestamp(meta?.lastScrapedAt)}</span></span>
-              <span className="nav-meta">Last flight check <span>{fmtTimestamp(meta?.lastFlightsRefreshAt)}</span></span>
+            <div className="brand-copy">
+              <span className="brand-text">UCPA Tracker</span>
+              <span className="brand-tagline">Ski packages and flights, in one view</span>
             </div>
           </div>
         </div>
@@ -295,6 +325,23 @@ export default function App() {
           </main>
         </div>
       </div>
+
+      <footer className="app-footer">
+        <div className="app-footer-row">
+          <div className="footer-status-item">
+            <span className="footer-status-label">Catalogue updated</span>
+            <span>{fmtTimestamp(meta?.lastScrapedAt)}</span>
+          </div>
+          <div className="footer-status-item">
+            <span className="footer-status-label">Flight prices checked</span>
+            <span>{fmtTimestamp(meta?.lastFlightsRefreshAt)}</span>
+          </div>
+          <div className="footer-status-item footer-status-next">
+            <span className="footer-status-label">Next scheduled refresh</span>
+            <span>{nextScheduledRefresh()} · Europe/Riga</span>
+          </div>
+        </div>
+      </footer>
 
     </div>
   );

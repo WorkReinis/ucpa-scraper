@@ -40,6 +40,14 @@
   flex-shrink: 0;
 }
 
+.brand-copy {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  line-height: 1.2;
+}
+
 .logo-mark {
   width: 32px;
   height: 32px;
@@ -57,6 +65,16 @@
   font-weight: 600;
   letter-spacing: -0.3px;
   color: var(--text-h);
+}
+
+.brand-tagline {
+  margin-top: 3px;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 450;
+  letter-spacing: 0.01em;
+  opacity: 0.68;
+  white-space: nowrap;
 }
 
 .scrape-controls {
@@ -125,6 +143,41 @@
   margin: 0 auto;
   padding: 20px 24px 80px;
 }
+
+.app-footer {
+  border-top: 1px solid var(--header-line);
+  background: rgba(255, 255, 255, 0.34);
+}
+
+.app-footer-row {
+  display: flex;
+  align-items: center;
+  gap: 22px 36px;
+  width: 100%;
+  max-width: 1260px;
+  min-height: 72px;
+  margin-inline: auto;
+  padding: 14px 24px;
+  color: var(--text);
+  font-size: 11px;
+}
+
+.footer-status-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.footer-status-label {
+  color: var(--text-h);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.footer-status-next { margin-left: auto; text-align: right; }
 
 .notice-banner {
   width: 100%;
@@ -1024,6 +1077,8 @@
 .ticket-dim { color: var(--ticket-muted) !important; font-size: 12px !important; }
 
 @media (max-width: 660px) {
+  .app-footer-row { align-items: flex-start; flex-direction: column; }
+  .footer-status-next { margin-left: 0; text-align: left; }
   .ticket-main { display: block; height: auto; }
   .ticket-image-wrap { height: 128px; min-height: 0; }
   .ticket-perf-v { height: 1px; background: repeating-linear-gradient(90deg, var(--ticket-hairline) 0 5px, transparent 5px 11px); }
