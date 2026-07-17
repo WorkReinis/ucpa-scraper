@@ -4,6 +4,8 @@ if (-not (Test-Path -LiteralPath "ucpa.db")) {
   throw "ucpa.db was not found in the repository root."
 }
 $databasePath = (Resolve-Path -LiteralPath "ucpa.db").Path
+node src/checkpoint-db.mjs $databasePath
+if ($LASTEXITCODE -ne 0) { throw "Could not checkpoint the SQLite WAL before copying." }
 $databaseHash = (Get-FileHash -LiteralPath $databasePath -Algorithm SHA256).Hash
 if (-not (git remote get-url origin 2>$null)) {
   throw "Git remote 'origin' is not configured yet. Create the GitHub repository and push the code first."
