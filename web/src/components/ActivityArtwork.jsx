@@ -26,7 +26,6 @@ function activityArtworkKind(d) {
 
 function ResortScene() {
   return <>
-    <circle className="activity-art-sun" cx="110" cy="31" r="16" />
     <path className="activity-art-mountain" d="M-8 111 28 57l17 21 22-39 78 87H-8Z" />
     <path className="activity-art-snowcap" d="m28 57 17 21 22-39 17 19-17-7-20 36-20-17-35 56H-8Z" />
     <path className="activity-art-snow" d="M-8 138c35-14 72-9 153-32v82H-8Z" />
@@ -38,7 +37,6 @@ function ResortScene() {
 
 function GladeScene() {
   return <>
-    <circle className="activity-art-sun" cx="108" cy="30" r="15" />
     <path className="activity-art-mountain" d="M-9 114 37 48l20 25 20-34 68 86H-9Z" />
     <path className="activity-art-snowcap" d="m37 48 20 25 20-34 17 21-16-8-20 32-21-20-46 61H-9Z" />
     <path className="activity-art-snow" d="M-8 141c28-24 56-20 79-5s44 13 74-13v65H-8Z" />
@@ -49,7 +47,6 @@ function GladeScene() {
 
 function AlpineScene() {
   return <>
-    <circle className="activity-art-sun" cx="110" cy="29" r="15" />
     <path className="activity-art-mountain" d="M-12 124 22 67l18 19 25-51 18 30 13-20 53 80Z" />
     <path className="activity-art-snowcap" d="m22 67 18 19 25-51 18 30 13-20 20 31-18-12-13 17-19-31-24 48-20-17-34 44H-12Z" />
     <path className="activity-art-snow" d="M-8 150c33-16 58-13 80-2s43 8 73-14v54H-8Z" />
@@ -60,7 +57,6 @@ function AlpineScene() {
 
 function RidgeScene() {
   return <>
-    <circle className="activity-art-sun" cx="109" cy="31" r="16" />
     <path className="activity-art-mountain" d="M-12 119 28 63l18 22 27-47 18 29 12-17 46 71Z" />
     <path className="activity-art-snowcap" d="m28 63 18 22 27-47 18 29 12-17 17 26-15-9-11 16-20-32-26 46-21-18-38 42H-12Z" />
     <path className="activity-art-snow" d="M-8 150c35-35 70-24 89-12s39 9 64-12v62H-8Z" />
@@ -90,14 +86,12 @@ function Sprite({ type }) {
 export default function ActivityArtwork({ listing }) {
   const kind = activityArtworkKind(listing);
   const art = ART[kind];
-  const labelClass = `activity-art-label${art.label.length > 14 ? " activity-art-label-long" : ""}`;
   return <div className={`activity-artwork activity-artwork-${art.scene}`} role="img" aria-label={`${art.label.toLowerCase()} illustration`}>
     <svg className="activity-artwork-canvas activity-artwork-portrait" viewBox="0 0 137 188" aria-hidden="true">
       <rect className="activity-art-sky" width="137" height="188" />
       <Scene name={art.scene} />
       {kind === "splitboard" && <path className="activity-art-split" d="M31 158 75 65M39 161l44-93" />}
       <Sprite type={art.sprite} />
-      <g className={labelClass}><rect x="7" y="163" width="123" height="18" rx="9" /><text x="68.5" y="175.5">{art.label}</text></g>
     </svg>
     <svg className="activity-artwork-canvas activity-artwork-landscape" viewBox="0 0 600 188" aria-hidden="true">
       <rect className="activity-art-sky" width="600" height="188" />
@@ -106,7 +100,6 @@ export default function ActivityArtwork({ listing }) {
         {kind === "splitboard" && <path className="activity-art-split" d="M31 158 75 65M39 161l44-93" />}
         <Sprite type={art.sprite} />
       </g>
-      <g className={labelClass}><rect x="238" y="163" width="124" height="18" rx="9" /><text x="300" y="175.5">{art.label}</text></g>
     </svg>
   </div>;
 }

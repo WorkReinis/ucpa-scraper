@@ -1088,26 +1088,22 @@
 .activity-artwork { position: absolute; inset: 0; }
 .activity-artwork-canvas { display: block; width: 100%; height: 100%; }
 .activity-artwork-landscape { display: none; }
-.activity-artwork-resort { --art-sky: #dceaf7; --art-mid: #83a8c8; --art-deep: #527596; --art-mark: #6f9ec9; }
-.activity-artwork-glade { --art-sky: #dcefe1; --art-mid: #67ad7c; --art-deep: #37684b; --art-mark: #4f9f68; }
-.activity-artwork-alpine { --art-sky: #e4e0f3; --art-mid: #9487c4; --art-deep: #554b7a; --art-mark: #7869ad; }
-.activity-artwork-ridge { --art-sky: #dbeeee; --art-mid: #62a7a2; --art-deep: #315e5e; --art-mark: #438c88; }
+.activity-artwork-resort { --art-sky: #c6dbed; --art-mid: #759dc0; --art-peak: #c5d8e7; --art-ground: #97b8d0; --art-detail: #628fb3; --art-structure: #5f83a1; }
+.activity-artwork-glade { --art-sky: #c7e3d1; --art-mid: #6fac86; --art-peak: #c8ded0; --art-ground: #8cba9b; --art-detail: #4e8f6b; --art-structure: #588969; }
+.activity-artwork-alpine { --art-sky: #d8d3e9; --art-mid: #8879ba; --art-peak: #d1cbe4; --art-ground: #9a8dc4; --art-detail: #6657a0; --art-structure: #6c5d96; }
+.activity-artwork-ridge { --art-sky: #cae0df; --art-mid: #559a97; --art-peak: #c4dad8; --art-ground: #73aaa7; --art-detail: #3f8581; --art-structure: #407975; }
 .activity-art-sky { fill: var(--art-sky); }
-.activity-art-sun { fill: var(--art-mid); opacity: 0.9; }
 .activity-art-mountain { fill: var(--art-mid); }
-.activity-art-snowcap { fill: rgba(255, 255, 255, 0.78); }
-.activity-art-snow { fill: rgba(255, 255, 255, 0.96); }
-.activity-art-piste { fill: none; stroke: var(--art-mark); stroke-width: 2; opacity: 0.52; }
-.activity-art-lift { fill: none; stroke: var(--art-deep); stroke-width: 1.5; opacity: 0.68; }
-.activity-art-building, .activity-art-trees { fill: var(--art-deep); opacity: 0.74; }
-.activity-art-powder { fill: none; stroke: var(--art-mark); stroke-width: 4; stroke-linecap: round; opacity: 0.62; }
-.activity-art-route { fill: none; stroke: var(--art-mark); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 2 6; }
-.activity-art-split { fill: none; stroke: var(--art-mark); stroke-width: 3; stroke-linecap: round; opacity: 0.72; }
+.activity-art-snowcap { fill: var(--art-peak); }
+.activity-art-snow { fill: var(--art-ground); }
+.activity-art-piste { fill: none; stroke: var(--art-detail); stroke-width: 2; }
+.activity-art-lift { fill: none; stroke: var(--art-structure); stroke-width: 1.5; }
+.activity-art-building, .activity-art-trees { fill: var(--art-structure); }
+.activity-art-powder { fill: none; stroke: var(--art-detail); stroke-width: 4; stroke-linecap: round; }
+.activity-art-route { fill: none; stroke: var(--art-detail); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 2 6; }
+.activity-art-split { fill: none; stroke: var(--art-detail); stroke-width: 3; stroke-linecap: round; }
 .activity-art-sprite { fill: #fff; filter: drop-shadow(0 3px 4px rgba(27, 50, 67, 0.18)); }
 .activity-art-sprite-dual { opacity: 0.98; }
-.activity-art-label rect { fill: rgba(255, 255, 255, 0.9); }
-.activity-art-label text { fill: var(--art-deep); font-family: var(--sans); font-size: 7px; font-weight: 600; letter-spacing: 0.85px; text-anchor: middle; }
-.activity-art-label-long text { font-size: 6.4px; letter-spacing: 0.62px; }
 .ticket-trip { position: relative; min-width: 0; padding: 20px 22px 18px; }
 .ticket-eyebrow-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
 .ticket-eyebrow { color: var(--ticket-muted); font-size: 11px; font-weight: 600; letter-spacing: 0.07em; line-height: 1.35; text-transform: uppercase; }
