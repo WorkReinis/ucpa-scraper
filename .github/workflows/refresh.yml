@@ -117,6 +117,10 @@ jobs:
         if: env.OPERATION != 'dry-run'
         uses: actions/deploy-pages@v4
 
+      - name: Checkpoint successful database
+        if: env.OPERATION != 'dry-run' && steps.deployment.outcome == 'success'
+        run: node src/checkpoint-db.mjs ucpa.db
+
       - name: Back up successful database
         if: env.OPERATION != 'dry-run' && steps.deployment.outcome == 'success'
         uses: actions/upload-artifact@v4
