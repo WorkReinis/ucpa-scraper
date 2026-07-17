@@ -1088,10 +1088,13 @@
 .activity-artwork { position: absolute; inset: 0; }
 .activity-artwork-canvas { display: block; width: 100%; height: 100%; }
 .activity-artwork-landscape { display: none; }
-.activity-artwork-resort { --art-sky: #c6dbed; --art-mid: #759dc0; --art-peak: #c5d8e7; --art-ground: #97b8d0; --art-detail: #628fb3; --art-structure: #5f83a1; }
-.activity-artwork-glade { --art-sky: #c7e3d1; --art-mid: #6fac86; --art-peak: #c8ded0; --art-ground: #8cba9b; --art-detail: #4e8f6b; --art-structure: #588969; }
-.activity-artwork-alpine { --art-sky: #d8d3e9; --art-mid: #8879ba; --art-peak: #d1cbe4; --art-ground: #9a8dc4; --art-detail: #6657a0; --art-structure: #6c5d96; }
-.activity-artwork-ridge { --art-sky: #cae0df; --art-mid: #559a97; --art-peak: #c4dad8; --art-ground: #73aaa7; --art-detail: #3f8581; --art-structure: #407975; }
+.activity-artwork-ski { --art-sky: #c6dbed; --art-mid: #759dc0; --art-peak: #c5d8e7; --art-ground: #97b8d0; --art-detail: #628fb3; --art-structure: #5f83a1; }
+.activity-artwork-snowboard { --art-sky: #ead8ca; --art-mid: #b57d58; --art-peak: #dec5b3; --art-ground: #cda98e; --art-detail: #9f6947; --art-structure: #87583c; }
+.activity-artwork-dual { --art-sky: #d7dbea; --art-mid: #818ab8; --art-peak: #c9cde0; --art-ground: #a2a9cc; --art-detail: #6c76a5; --art-structure: #59638e; }
+.activity-artwork-off-piste-ski { --art-sky: #c7e3d1; --art-mid: #6fac86; --art-peak: #c8ded0; --art-ground: #8cba9b; --art-detail: #4e8f6b; --art-structure: #588969; }
+.activity-artwork-off-piste-board { --art-sky: #ead6df; --art-mid: #b47791; --art-peak: #dfc6d1; --art-ground: #c99caf; --art-detail: #995a76; --art-structure: #804a63; }
+.activity-artwork-touring { --art-sky: #d8d3e9; --art-mid: #8879ba; --art-peak: #d1cbe4; --art-ground: #9a8dc4; --art-detail: #6657a0; --art-structure: #6c5d96; }
+.activity-artwork-splitboard { --art-sky: #cae0df; --art-mid: #559a97; --art-peak: #c4dad8; --art-ground: #73aaa7; --art-detail: #3f8581; --art-structure: #407975; }
 .activity-art-sky { fill: var(--art-sky); }
 .activity-art-mountain { fill: var(--art-mid); }
 .activity-art-snowcap { fill: var(--art-peak); }
