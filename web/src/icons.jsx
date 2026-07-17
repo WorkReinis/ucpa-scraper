@@ -49,13 +49,7 @@ export const IconSeat = (
 
 export const IconPlane = (
   <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-    <path
-      d="M14.5 1.5 7.5 8.5M10 14.5 7.5 8.5 1.5 6 14.5 1.5Z"
-      stroke="currentColor"
-      strokeWidth="1.3"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
+    <path d="M14.5 8 9.4 5.2V2.4C9.4 1.6 8.8.9 8 .9s-1.4.7-1.4 1.5v2.8L1.5 8v1.3l5.1-1.5v3.3l-1.5 1v1l2.9-.7 2.9.7v-1l-1.5-1V7.8l5.1 1.5V8Z" fill="currentColor" />
   </svg>
 );
 

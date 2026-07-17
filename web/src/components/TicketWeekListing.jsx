@@ -1,5 +1,5 @@
 import { useId, useState } from "react";
-import { IconCalendar, IconClock, IconHeart, IconPlane, IconTicket } from "../icons";
+import { IconHeart, IconPlane, IconTicket } from "../icons";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -52,12 +52,6 @@ export default function TicketWeekListing({ d, includeFlightCosts = false, favor
   const totalPrice = d.price + (hasFlight ? d.flight_price : 0);
   const seatsTier = d.seats_left <= 2 ? "critical" : d.seats_left <= 5 ? "low" : "ok";
   const googleFlights = googleFlightsUrl(d);
-  const flightLine = [
-    fmtDate(d.flight_depart_date),
-    d.flight_dep && d.flight_arr ? `${d.flight_dep} → ${d.flight_arr}` : null,
-    d.flight_airline,
-    fmtMinutes(d.flight_duration_min),
-  ].filter(Boolean).join(" · ");
   const compactFlightLine = [
     `${fmtShortDate(d.flight_depart_date)} – ${fmtShortDate(d.flight_return_date, true)}`,
     d.flight_dep && d.flight_arr ? `${d.flight_dep} ⇄ ${d.flight_arr}` : null,
@@ -140,19 +134,22 @@ export default function TicketWeekListing({ d, includeFlightCosts = false, favor
       <div className="ticket-tear" aria-hidden="true"><span className="ticket-notch ticket-notch-left" /><span className="ticket-notch ticket-notch-right" /></div>
 
       <div className="ticket-foot">
-        <div className="ticket-foot-row">
-          <button type="button" className="ticket-toggle" onClick={toggle} aria-expanded={open} aria-controls={detailsId}>
-            Trip details
-            <svg className="ticket-chevron" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
-          </button>
+        <div className="ticket-foot-row" role="button" tabIndex={0} aria-label="Toggle trip details" aria-expanded={open} aria-controls={detailsId}
+          onClick={toggle}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              toggle();
+            }
+          }}>
           {includeFlightCosts && (
             <div className="ticket-flight-summary">
               {hasFlight ? <>{IconPlane}<span>{compactFlightLine}</span></> : <span>Flight price unavailable</span>}
             </div>
           )}
           <div className="ticket-links">
-            {googleFlights && <a className="ticket-link-button" href={googleFlights} target="_blank" rel="noreferrer">{IconPlane}<span>Google Flights</span></a>}
-            <a className="ticket-link-button" href={d.url} target="_blank" rel="noreferrer">{IconTicket}<span>View UCPA</span></a>
+            {googleFlights && <a className="ticket-link-button" href={googleFlights} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>{IconPlane}<span>Google Flights</span></a>}
+            <a className="ticket-link-button" href={d.url} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>{IconTicket}<span>View UCPA</span></a>
           </div>
         </div>
 
@@ -163,14 +160,6 @@ export default function TicketWeekListing({ d, includeFlightCosts = false, favor
               {d.includes?.length > 0 && <div className="ticket-detail-column"><h4>Included</h4><ul>{d.includes.map((item) => <li key={item}>{item}</li>)}</ul></div>}
               {d.excludes?.length > 0 && <div className="ticket-detail-column"><h4>Not included</h4><ul>{d.excludes.map((item) => <li key={item}>{item}</li>)}</ul></div>}
               {d.options?.length > 0 && <div className="ticket-detail-column"><h4>Add-on options</h4><ul>{d.options.map((item) => <li key={item}>{item}</li>)}</ul></div>}
-              {includeFlightCosts && <div className="ticket-detail-column ticket-flight-column">
-                <h4>Flight</h4>
-                {hasFlight ? <div className="ticket-flight-details">
-                  <p><span className="ticket-flight-leg">Outbound</span><span>{IconPlane}</span>{flightLine}</p>
-                  <p><span className="ticket-flight-leg">Return</span><span>{IconCalendar}</span>{fmtDate(d.flight_return_date)} / {d.flight_arr} to {d.flight_dep} / <span>{IconTicket}</span>{d.flight_airline} / <span>{IconClock}</span>{fmtMinutes(d.flight_duration_min)}</p>
-                  <p className="ticket-dim"><span className="ticket-flight-leg">Price</span>{fmtPrice(d.flight_price)} per person</p>
-                </div> : <p>Flight price unavailable</p>}
-              </div>}
             </div>
           </div>
         </div>
