@@ -4,9 +4,9 @@
 // departure_id/arrival_id both take comma-separated lists -- so a refresh
 // costs one search per distinct upcoming (start, end) week in the week
 // calendar, ~25-40 for a full Nov-Apr season. Quotes land append-only in
-// flight_price (src/db.mjs). The flight_search ledger enforces one successful
-// quote per pair per ISO week, no more than two attempts per pair per week,
-// and a hard 225-search monthly ceiling.
+// flight_price (src/db.mjs). The flight_search ledger keeps successful quotes
+// fresh for six days, allows no more than two attempts per pair in that rolling
+// window, and enforces a hard 225-search monthly ceiling.
 //
 // Needs SERPAPI_KEY in the environment -- free key at https://serpapi.com.
 
@@ -30,7 +30,8 @@ const ORIGIN_AIRPORTS = "AMS,RTM";
 const DEST_AIRPORTS = "LYS,ZRH,GVA,TRN,TLS";
 
 export const MONTHLY_SEARCH_LIMIT = 225;
-export const MAX_ATTEMPTS_PER_PAIR_WEEK = 2;
+export const FLIGHT_REFRESH_DAYS = 6;
+export const MAX_ATTEMPTS_PER_PAIR_WINDOW = 2;
 // Wide enough that a summer refresh still covers the whole Nov-Apr season
 // (the current catalogue is only ~22 distinct weeks, so this cap is about
 // not querying beyond Google's ~11-month booking horizon, not about quota).
@@ -48,19 +49,10 @@ const FLIGHT_DEPART_DAYS_BEFORE = 1;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-export function isoWeekKey(value = new Date()) {
-  const d = new Date(value);
-  d.setUTCHours(0, 0, 0, 0);
-  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  const week = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
-  return `${d.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
-}
-
-export function flightPolicy({ monthlyAttempts, weeklyAttempts, hasQuoteThisWeek }) {
-  if (hasQuoteThisWeek) return "weekly_quote";
+export function flightPolicy({ monthlyAttempts, recentAttempts, hasFreshQuote }) {
+  if (hasFreshQuote) return "fresh_quote";
   if (monthlyAttempts >= MONTHLY_SEARCH_LIMIT) return "monthly_quota";
-  if (weeklyAttempts >= MAX_ATTEMPTS_PER_PAIR_WEEK) return "weekly_attempts";
+  if (recentAttempts >= MAX_ATTEMPTS_PER_PAIR_WINDOW) return "recent_attempts";
   return "search";
 }
 
@@ -187,21 +179,23 @@ export async function runFlightRefresh({ db } = {}) {
   ).all(`+${MONTHS_AHEAD} months`);
 
   const now = new Date();
-  const weekKey = isoWeekKey(now);
+  const refreshKey = now.toISOString().slice(0, 10);
   const billingMonth = now.toISOString().slice(0, 7);
   let monthlyAttempts = _db.prepare(
     "SELECT COUNT(*) n FROM flight_search WHERE billing_month = ?"
   ).get(billingMonth).n;
-  const hasWeeklyQuote = _db.prepare(
-    `SELECT 1 FROM flight_search
-     WHERE week_key = ? AND outbound_date = ? AND return_date = ?
-       AND status IN ('success', 'no_result')
+  const hasFreshQuote = _db.prepare(
+    `SELECT 1 FROM flight_price
+     WHERE outbound_date = ? AND return_date = ?
+       AND date(fetched_at) > date('now', ?)
      LIMIT 1`
   );
-  const weeklyAttempts = _db.prepare(
+  const recentAttempts = _db.prepare(
     `SELECT COUNT(*) n FROM flight_search
-     WHERE week_key = ? AND outbound_date = ? AND return_date = ?`
+     WHERE outbound_date = ? AND return_date = ?
+       AND date(attempted_at) > date('now', ?)`
   );
+  const freshnessWindow = `-${FLIGHT_REFRESH_DAYS} days`;
 
   const summary = {
     pairs: pairs.length,
@@ -210,7 +204,7 @@ export async function runFlightRefresh({ db } = {}) {
     failed: 0,
     noResult: 0,
     quotaSkipped: 0,
-    weeklyAttemptSkipped: 0,
+    recentAttemptSkipped: 0,
     quotaLimit: MONTHLY_SEARCH_LIMIT,
     quotaUsed: monthlyAttempts,
     quotaRemaining: Math.max(MONTHLY_SEARCH_LIMIT - monthlyAttempts, 0),
@@ -219,19 +213,19 @@ export async function runFlightRefresh({ db } = {}) {
     const flightDate = addDays(start_date, -FLIGHT_DEPART_DAYS_BEFORE);
     const policy = flightPolicy({
       monthlyAttempts,
-      weeklyAttempts: weeklyAttempts.get(weekKey, flightDate, end_date).n,
-      hasQuoteThisWeek: Boolean(hasWeeklyQuote.get(weekKey, flightDate, end_date)),
+      recentAttempts: recentAttempts.get(flightDate, end_date, freshnessWindow).n,
+      hasFreshQuote: Boolean(hasFreshQuote.get(flightDate, end_date, freshnessWindow)),
     });
     if (policy !== "search") {
       summary.skipped++;
       if (policy === "monthly_quota") summary.quotaSkipped++;
-      if (policy === "weekly_attempts") summary.weeklyAttemptSkipped++;
+      if (policy === "recent_attempts") summary.recentAttemptSkipped++;
       continue;
     }
     const searchId = startFlightSearch(_db, {
       outboundDate: flightDate,
       returnDate: end_date,
-      weekKey,
+      weekKey: refreshKey,
       billingMonth,
     });
     monthlyAttempts++;

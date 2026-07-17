@@ -2,6 +2,7 @@ import { translate, translateList } from "./translate.mjs";
 import { tierOf, tierRank } from "./levels.mjs";
 import { groupsOf, groupsPresent } from "./activities.mjs";
 import { findUnknownCategories } from "./categories.mjs";
+import { FLIGHT_REFRESH_DAYS } from "./flights.mjs";
 
 function translateListing(row) {
   return {
@@ -69,6 +70,12 @@ export function getFiltersData(db, { flightsConfigured = false } = {}) {
     lastScrapedAt: db.prepare("SELECT MAX(started_at) v FROM run").get().v,
     flightsConfigured,
     lastFlightsRefreshAt: db.prepare("SELECT MAX(fetched_at) v FROM flight_price").get().v,
+    refreshSchedule: {
+      time: "07:15",
+      timeZone: "Europe/Riga",
+      catalogueDays: 1,
+      flightDays: FLIGHT_REFRESH_DAYS,
+    },
     flightQuota: {
       limit: 225,
       used: attemptedThisMonth,

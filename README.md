@@ -84,9 +84,10 @@ One-time setup after creating a public GitHub repository:
 4. Under **Settings > Pages**, choose **GitHub Actions** as the source and run
    the **Deploy GitHub Pages** workflow once.
 
-`refresh.yml` runs daily at 07:15 Europe/Riga from August through April and
-weekly from May through July. Its manual menu supports catalogue-only,
-flight-only, both, and a non-publishing dry run. A failed scrape or build never
+`refresh.yml` runs daily at 07:15 Europe/Riga all year. The UCPA catalogue is
+refreshed on every scheduled run; flight requests are made only when the last
+quote for a date pair is six calendar days old. Its manual menu supports
+catalogue-only, flight-only, both, and a non-publishing dry run. A failed scrape or build never
 replaces the last deployed site or the rolling database. Successful databases
 are also retained as workflow artifacts for 14 days.
 
@@ -133,8 +134,9 @@ One search prices the whole airport cross-product (2 origins × 5
 destinations) for one (start, end) date pair at once, and every product
 sharing that week shares the quote.
 Quotes are append-only in `flight_price` (price history for free, like
-everything else here). The ledger permits two attempts per date pair per ISO
-week and enforces a hard ceiling of 225 SerpApi requests per calendar month.
+everything else here). A quote stays fresh for six calendar days. The ledger
+permits two attempts per date pair in that rolling window and enforces a hard
+ceiling of 225 SerpApi requests per calendar month.
 Without a current quote, the ticket keeps its package price and links to a
 manual Google Flights search.
 

@@ -139,6 +139,8 @@ CREATE TABLE IF NOT EXISTS flight_search (
 );
 CREATE INDEX IF NOT EXISTS idx_flight_search_policy
   ON flight_search(billing_month, week_key, outbound_date, return_date);
+CREATE INDEX IF NOT EXISTS idx_flight_search_recent
+  ON flight_search(outbound_date, return_date, attempted_at);
 
 CREATE TABLE IF NOT EXISTS source_snapshot (
   run_id            INTEGER NOT NULL REFERENCES run(id),

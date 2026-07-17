@@ -6,7 +6,7 @@ import WeekListing from "./components/WeekListing";
 import TicketWeekListing from "./components/TicketWeekListing";
 import useFavorites from "./useFavorites";
 import { filterFavoriteWeeks } from "./staticCatalog";
-import { IconLayoutCompact, IconLayoutDetailed, IconSearch } from "./icons";
+import { IconLayoutCompact, IconLayoutDetailed, IconPlane, IconSearch, IconTicket } from "./icons";
 import "./App.css";
 
 function fmtTimestamp(iso) {
@@ -16,37 +16,49 @@ function fmtTimestamp(iso) {
   });
 }
 
-function nextScheduledRefresh(now = new Date()) {
-  const parts = Object.fromEntries(
+function localClockParts(value, timeZone) {
+  return Object.fromEntries(
     new Intl.DateTimeFormat("en-GB", {
-      timeZone: "Europe/Riga",
+      timeZone,
       year: "numeric",
       month: "numeric",
       day: "numeric",
       hour: "numeric",
       minute: "numeric",
       hourCycle: "h23",
-    }).formatToParts(now).filter(({ type }) => type !== "literal").map(({ type, value }) => [type, Number(value)])
+    }).formatToParts(value).filter(({ type }) => type !== "literal").map(({ type, value: part }) => [type, Number(part)])
   );
+}
+
+function formatScheduledDay(day, time) {
+  const date = new Intl.DateTimeFormat(undefined, {
+    timeZone: "UTC",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(new Date(day));
+  return `${date}, ${time}`;
+}
+
+function nextDailyRefresh(now = new Date(), time = "07:15", timeZone = "Europe/Riga") {
+  const parts = localClockParts(now, timeZone);
+  const [runHour, runMinute] = time.split(":").map(Number);
   const localDay = Date.UTC(parts.year, parts.month - 1, parts.day);
-  const hasRunToday = parts.hour > 7 || (parts.hour === 7 && parts.minute >= 15);
+  const hasRunToday = parts.hour > runHour || (parts.hour === runHour && parts.minute >= runMinute);
+  return formatScheduledDay(localDay + (hasRunToday ? 86_400_000 : 0), time);
+}
 
-  for (let offset = 0; offset <= 7; offset += 1) {
-    const candidate = new Date(localDay + offset * 86_400_000);
-    const month = candidate.getUTCMonth() + 1;
-    const runsToday = month <= 4 || month >= 8 || candidate.getUTCDay() === 1;
-    if (runsToday && (offset > 0 || !hasRunToday)) {
-      const date = new Intl.DateTimeFormat(undefined, {
-        timeZone: "UTC",
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-      }).format(candidate);
-      return `${date}, 07:15`;
-    }
-  }
+function nextFlightRefresh(lastRefresh, now = new Date(), cadenceDays = 6, time = "07:15", timeZone = "Europe/Riga") {
+  if (!lastRefresh) return nextDailyRefresh(now, time, timeZone);
 
-  return "—";
+  const current = localClockParts(now, timeZone);
+  const latest = localClockParts(new Date(lastRefresh), timeZone);
+  const [runHour, runMinute] = time.split(":").map(Number);
+  const today = Date.UTC(current.year, current.month - 1, current.day);
+  const dueDay = Date.UTC(latest.year, latest.month - 1, latest.day) + cadenceDays * 86_400_000;
+  const hasRunToday = current.hour > runHour || (current.hour === runHour && current.minute >= runMinute);
+  const nextDay = dueDay > today ? dueDay : (!hasRunToday ? today : today + 86_400_000);
+  return formatScheduledDay(nextDay, time);
 }
 
 function weekKey(d) {
@@ -181,6 +193,12 @@ export default function App() {
   const showSkeleton = loading && weeks.length === 0;
   const showEmpty = !loading && favFilteredWeeks.length === 0;
   const filtersActive = hasActiveFilters(filters, favOnly);
+  const refreshSchedule = meta?.refreshSchedule ?? {
+    time: "07:15",
+    timeZone: "Europe/Riga",
+    catalogueDays: 1,
+    flightDays: 6,
+  };
 
   if (error) return <div className="error">Failed to load: {error}</div>;
 
@@ -328,18 +346,33 @@ export default function App() {
 
       <footer className="app-footer">
         <div className="app-footer-row">
-          <div className="footer-status-item">
-            <span className="footer-status-label">Catalogue updated</span>
-            <span>{fmtTimestamp(meta?.lastScrapedAt)}</span>
-          </div>
-          <div className="footer-status-item">
-            <span className="footer-status-label">Flight prices checked</span>
-            <span>{fmtTimestamp(meta?.lastFlightsRefreshAt)}</span>
-          </div>
-          <div className="footer-status-item footer-status-next">
-            <span className="footer-status-label">Next scheduled refresh</span>
-            <span>{nextScheduledRefresh()} · Europe/Riga</span>
-          </div>
+          <section className="refresh-tracker" aria-label="UCPA package refresh schedule">
+            <span className="refresh-tracker-icon">{IconTicket}</span>
+            <div className="refresh-tracker-copy">
+              <div className="refresh-tracker-head">
+                <strong>UCPA packages</strong>
+                <span className="refresh-cadence">Daily</span>
+              </div>
+              <div className="refresh-tracker-times">
+                <span>Updated <b>{fmtTimestamp(meta?.lastScrapedAt)}</b></span>
+                <span>Next <b>{nextDailyRefresh(new Date(), refreshSchedule.time, refreshSchedule.timeZone)}</b></span>
+              </div>
+            </div>
+          </section>
+          <section className="refresh-tracker" aria-label="Flight price refresh schedule">
+            <span className="refresh-tracker-icon refresh-tracker-icon-flight">{IconPlane}</span>
+            <div className="refresh-tracker-copy">
+              <div className="refresh-tracker-head">
+                <strong>Flight prices</strong>
+                <span className="refresh-cadence">Every {refreshSchedule.flightDays} days</span>
+              </div>
+              <div className="refresh-tracker-times">
+                <span>Checked <b>{fmtTimestamp(meta?.lastFlightsRefreshAt)}</b></span>
+                <span>Next <b>{nextFlightRefresh(meta?.lastFlightsRefreshAt, new Date(), refreshSchedule.flightDays, refreshSchedule.time, refreshSchedule.timeZone)}</b></span>
+              </div>
+            </div>
+          </section>
+          <span className="refresh-timezone">07:15 · {refreshSchedule.timeZone}</span>
         </div>
       </footer>
 

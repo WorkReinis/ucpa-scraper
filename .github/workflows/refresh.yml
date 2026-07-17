@@ -2,9 +2,7 @@ name: Refresh UCPA catalogue
 
 on:
   schedule:
-    - cron: "15 7 * 1-4,8-12 *"
-      timezone: Europe/Riga
-    - cron: "15 7 * 5-7 1"
+    - cron: "15 7 * * *"
       timezone: Europe/Riga
   workflow_dispatch:
     inputs:
@@ -75,7 +73,7 @@ jobs:
         if: env.OPERATION == 'catalogue' || env.OPERATION == 'both'
         run: npm run scrape -- --strict
 
-      - name: Refresh weekly flights
+      - name: Refresh flights when six-day quotes are due
         id: flights
         if: env.OPERATION == 'flights' || env.OPERATION == 'both'
         continue-on-error: true

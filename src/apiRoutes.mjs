@@ -59,8 +59,8 @@ export function createApiApp() {
   });
 
   // Same shape as /api/scrape: one at a time, request blocks until done.
-  // ~25-40 SerpApi searches on a cold season. The weekly pair ledger and
-  // monthly quota in src/flights.mjs do the real throttling.
+  // ~25-40 SerpApi searches on a cold season. The rolling six-day freshness
+  // window and monthly quota in src/flights.mjs do the real throttling.
   let refreshingFlights = false;
   app.post("/api/flights/refresh", async (req, res) => {
     if (refreshingFlights) return res.status(409).json({ error: "a flight refresh is already running" });

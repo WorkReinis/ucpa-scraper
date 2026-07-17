@@ -2,27 +2,23 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   flightPolicy,
-  isoWeekKey,
+  FLIGHT_REFRESH_DAYS,
   MONTHLY_SEARCH_LIMIT,
-  MAX_ATTEMPTS_PER_PAIR_WEEK,
+  MAX_ATTEMPTS_PER_PAIR_WINDOW,
 } from "../src/flights.mjs";
 
 test("monthly flight quota stops at 225 attempts", () => {
-  assert.equal(flightPolicy({ monthlyAttempts: 224, weeklyAttempts: 0, hasQuoteThisWeek: false }), "search");
-  assert.equal(flightPolicy({ monthlyAttempts: 225, weeklyAttempts: 0, hasQuoteThisWeek: false }), "monthly_quota");
-  assert.equal(flightPolicy({ monthlyAttempts: 226, weeklyAttempts: 0, hasQuoteThisWeek: false }), "monthly_quota");
+  assert.equal(flightPolicy({ monthlyAttempts: 224, recentAttempts: 0, hasFreshQuote: false }), "search");
+  assert.equal(flightPolicy({ monthlyAttempts: 225, recentAttempts: 0, hasFreshQuote: false }), "monthly_quota");
+  assert.equal(flightPolicy({ monthlyAttempts: 226, recentAttempts: 0, hasFreshQuote: false }), "monthly_quota");
   assert.equal(MONTHLY_SEARCH_LIMIT, 225);
 });
-test("a pair gets at most two weekly attempts and one successful quote", () => {
-  assert.equal(flightPolicy({ monthlyAttempts: 0, weeklyAttempts: 1, hasQuoteThisWeek: false }), "search");
+test("a pair gets at most two attempts per freshness window", () => {
+  assert.equal(flightPolicy({ monthlyAttempts: 0, recentAttempts: 1, hasFreshQuote: false }), "search");
   assert.equal(
-    flightPolicy({ monthlyAttempts: 0, weeklyAttempts: MAX_ATTEMPTS_PER_PAIR_WEEK, hasQuoteThisWeek: false }),
-    "weekly_attempts"
+    flightPolicy({ monthlyAttempts: 0, recentAttempts: MAX_ATTEMPTS_PER_PAIR_WINDOW, hasFreshQuote: false }),
+    "recent_attempts"
   );
-  assert.equal(flightPolicy({ monthlyAttempts: 0, weeklyAttempts: 0, hasQuoteThisWeek: true }), "weekly_quote");
-});
-
-test("ISO week keys cross year boundaries correctly", () => {
-  assert.equal(isoWeekKey("2027-01-01T12:00:00Z"), "2026-W53");
-  assert.equal(isoWeekKey("2027-01-04T12:00:00Z"), "2027-W01");
+  assert.equal(flightPolicy({ monthlyAttempts: 0, recentAttempts: 0, hasFreshQuote: true }), "fresh_quote");
+  assert.equal(FLIGHT_REFRESH_DAYS, 6);
 });
