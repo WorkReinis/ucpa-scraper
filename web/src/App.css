@@ -933,20 +933,20 @@
   box-shadow: var(--card-shadow);
   animation: week-card-in 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
   transition: border-color 0.25s ease, transform 0.25s ease, box-shadow 0.25s ease;
-  width: min(100%, 950px);
+  width: min(100%, 860px);
   margin-inline: auto;
 }
 .ticket-week-card:hover { border-color: #c9c9ce; transform: translateY(-1px); }
 .ticket-week-card.open { box-shadow: var(--card-shadow-open); }
 .ticket-week-card.favorited { border-color: var(--accent-border); }
-.ticket-main { display: grid; grid-template-columns: 150px 1px minmax(0, 1fr) 1px 220px; cursor: pointer; }
+.ticket-main { display: grid; grid-template-columns: 125px 1px minmax(0, 1fr) 1px 200px; height: 188px; cursor: pointer; }
 .ticket-main:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .ticket-image-wrap { position: relative; min-height: 188px; overflow: hidden; background: var(--ticket-soft); }
-.ticket-image-wrap img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.ticket-image-wrap img { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: cover; }
 .ticket-image-fallback { position: absolute; inset: 0; display: flex; align-items: flex-end; padding: 14px; background: linear-gradient(150deg, #d9e8f7, #8ca9c5 58%, #496780); color: #fff; }
 .ticket-image-fallback::before { content: ""; position: absolute; inset: 28% -12% -20%; background: linear-gradient(145deg, transparent 48%, rgba(255,255,255,0.36) 49% 56%, transparent 57%), linear-gradient(35deg, transparent 46%, rgba(30,64,90,0.25) 47% 62%, transparent 63%); }
 .ticket-image-fallback span { position: relative; z-index: 1; font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; text-shadow: 0 1px 8px rgba(0,0,0,0.35); }
-.ticket-trip { position: relative; min-width: 0; padding: 20px 24px 18px 66px; }
+.ticket-trip { position: relative; min-width: 0; padding: 20px 22px 18px; }
 .ticket-eyebrow-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
 .ticket-eyebrow { color: var(--ticket-muted); font-size: 11px; font-weight: 600; letter-spacing: 0.07em; line-height: 1.35; text-transform: uppercase; }
 .ticket-stamp { display: inline-flex; padding: 3px 7px; border-radius: 5px; background: var(--text-h); color: #fff; font-size: 10px; font-weight: 600; letter-spacing: 0.06em; line-height: 1.3; text-transform: uppercase; }
@@ -971,8 +971,8 @@
 .ticket-seats { font-size: 13px; font-variant-numeric: tabular-nums; }
 .ticket-seats-low { color: var(--amber); font-weight: 600; }
 .ticket-seats-critical { color: var(--danger); font-weight: 600; }
-.ticket-fav { position: absolute; top: 13px; left: 18px; z-index: 1; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border: 0; border-radius: 50%; background: transparent; color: var(--ticket-muted); cursor: pointer; }
-.ticket-fav:hover, .ticket-fav.active { color: var(--accent); background: var(--accent-bg); }
+.ticket-fav { position: absolute; top: 10px; left: 10px; z-index: 2; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border: 1px solid rgba(255,255,255,0.55); border-radius: 50%; background: rgba(255,255,255,0.86); color: #475569; box-shadow: 0 3px 12px rgba(15,23,42,0.18); backdrop-filter: blur(6px); cursor: pointer; }
+.ticket-fav:hover, .ticket-fav.active { color: var(--accent); background: #fff; }
 .ticket-fav.pulse { animation: popHeart 0.4s ease; }
 .ticket-fav:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .ticket-barcode { position: absolute; top: 16px; right: 16px; bottom: 16px; display: flex; gap: 7px; color: var(--text-h); }
@@ -987,6 +987,9 @@
 .ticket-toggle:hover { text-decoration: underline; }
 .ticket-chevron { flex-shrink: 0; transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1); }
 .ticket-week-card.open .ticket-chevron { transform: rotate(180deg); }
+.ticket-flight-summary { display: flex; align-items: center; justify-content: center; gap: 6px; min-width: 0; flex: 1; color: var(--ticket-muted); font-size: 11px; white-space: nowrap; }
+.ticket-flight-summary span { overflow: hidden; text-overflow: ellipsis; }
+.ticket-flight-summary svg { flex-shrink: 0; color: var(--accent); }
 .ticket-links { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .ticket-link-button { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding: 0 9px; border: 1px solid var(--accent-border); border-radius: 7px; background: var(--bg-card); color: var(--accent); font-size: 12px; font-weight: 600; text-decoration: none; white-space: nowrap; transition: background-color 0.15s ease, border-color 0.15s ease; }
 .ticket-link-button:hover { border-color: var(--accent); background: var(--accent-bg); }
@@ -998,8 +1001,11 @@
 .ticket-details-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px 28px; padding: 6px 24px 20px; }
 .ticket-detail-column { opacity: 0; transform: translateY(8px); transition: opacity 0.3s ease, transform 0.3s ease; }
 .ticket-week-card.open .ticket-detail-column { opacity: 1; transform: none; }
-.ticket-week-card.open .ticket-detail-column:nth-child(2) { transition-delay: 0.06s; }
-.ticket-week-card.open .ticket-detail-column:nth-child(3) { transition-delay: 0.12s; }
+.ticket-week-card.open .ticket-detail-column:nth-child(1) { transition-delay: 0s; }
+.ticket-week-card.open .ticket-detail-column:nth-child(2) { transition-delay: 0.05s; }
+.ticket-week-card.open .ticket-detail-column:nth-child(3) { transition-delay: 0.1s; }
+.ticket-week-card.open .ticket-detail-column:nth-child(4) { transition-delay: 0.15s; }
+.ticket-week-card.open .ticket-detail-column:nth-child(5) { transition-delay: 0.2s; }
 .ticket-detail-column h4 { margin: 0 0 6px; color: var(--ticket-muted); font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
 .ticket-detail-column p, .ticket-detail-column li { margin: 0; color: var(--text); font-size: 13px; line-height: 1.5; }
 .ticket-detail-column p + p { margin-top: 4px; }
@@ -1012,7 +1018,7 @@
 .ticket-flight-leg { min-width: 60px; color: var(--ticket-muted); font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; }
 
 @media (max-width: 660px) {
-  .ticket-main { display: block; }
+  .ticket-main { display: block; height: auto; }
   .ticket-image-wrap { height: 128px; min-height: 0; }
   .ticket-perf-v { height: 1px; background: repeating-linear-gradient(90deg, var(--ticket-hairline) 0 5px, transparent 5px 11px); }
   .ticket-notch-top { top: 50%; left: -8px; transform: translateY(-50%); }
@@ -1020,7 +1026,7 @@
   .ticket-stub { flex-direction: row; align-items: flex-end; justify-content: space-between; gap: 16px; padding: 16px 54px 16px 24px; }
   .ticket-seat-block { margin-top: 0; padding-top: 0; text-align: right; }
   .ticket-barcode { display: none; }
-  .ticket-fav { top: 12px; left: 12px; }
+  .ticket-fav { top: 10px; left: 10px; }
   .ticket-hero { flex-direction: column; gap: 10px; }
   .ticket-when { text-align: left; }
   .ticket-facts { gap: 12px 24px; }
@@ -1030,8 +1036,9 @@
   .results-toolbar { align-items: flex-start; flex-direction: column; }
   .results-toolbar-left { width: 100%; justify-content: space-between; }
   .toolbar-controls { width: 100%; overflow-x: auto; }
-  .ticket-trip { padding: 18px 18px 16px 54px; }
+  .ticket-trip { padding: 18px 18px 16px; }
   .ticket-foot-row { align-items: flex-start; padding: 10px 18px; }
+  .ticket-flight-summary { order: 3; flex-basis: 100%; justify-content: flex-start; }
   .ticket-links { gap: 6px 12px; }
   .ticket-details-grid { padding: 6px 18px 18px; }
 }

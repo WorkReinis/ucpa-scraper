@@ -9,6 +9,12 @@ function fmtDate(iso) {
   return `${day} ${MONTHS[Number(month) - 1]} ${year}`;
 }
 
+function fmtShortDate(iso, includeYear = false) {
+  if (!iso) return "";
+  const [year, month, day] = iso.split("-");
+  return `${day} ${MONTHS[Number(month) - 1]}${includeYear ? ` ${year}` : ""}`;
+}
+
 function fmtPrice(price) {
   return `€${Math.ceil(price)}`;
 }
@@ -52,6 +58,12 @@ export default function TicketWeekListing({ d, includeFlightCosts = false, favor
     d.flight_airline,
     fmtMinutes(d.flight_duration_min),
   ].filter(Boolean).join(" · ");
+  const compactFlightLine = [
+    `${fmtShortDate(d.flight_depart_date)} – ${fmtShortDate(d.flight_return_date, true)}`,
+    d.flight_dep && d.flight_arr ? `${d.flight_dep} ⇄ ${d.flight_arr}` : null,
+    d.flight_airline,
+    fmtMinutes(d.flight_duration_min),
+  ].filter(Boolean).join(" · ");
 
   function toggle() {
     setOpen((value) => !value);
@@ -79,13 +91,13 @@ export default function TicketWeekListing({ d, includeFlightCosts = false, favor
           {d.image_url
             ? <img src={d.image_url} alt="" loading="lazy" />
             : <div className="ticket-image-fallback" aria-hidden="true"><span>{d.resort}</span></div>}
-        </div>
-        <div className="ticket-perf-v ticket-perf-image" aria-hidden="true"><span className="ticket-notch ticket-notch-top" /><span className="ticket-notch ticket-notch-end" /></div>
-        <div className="ticket-trip">
           <button type="button" className={`ticket-fav${favorited ? " active" : ""}${pulse ? " pulse" : ""}`}
             onClick={handleFavoriteClick} aria-pressed={favorited} title={favorited ? "Remove from favorites" : "Save to favorites"}>
             {IconHeart(favorited)}
           </button>
+        </div>
+        <div className="ticket-perf-v ticket-perf-image" aria-hidden="true"><span className="ticket-notch ticket-notch-top" /><span className="ticket-notch ticket-notch-end" /></div>
+        <div className="ticket-trip">
           <div className="ticket-eyebrow-row">
             <span className="ticket-eyebrow">{d.title}</span>
             {Boolean(d.is_new) && <span className="ticket-stamp">New</span>}
@@ -103,8 +115,7 @@ export default function TicketWeekListing({ d, includeFlightCosts = false, favor
           <div className="ticket-facts">
             <div><span className="ticket-label">Level</span><span className="ticket-value">{levelTier(d.level)}</span></div>
             <div><span className="ticket-label">Coaching</span><span className="ticket-value">{d.instruction_type || "Independent"}{d.instructor_hours != null ? ` · ${d.instructor_hours}h` : ""}</span></div>
-            <div><span className="ticket-label">Stay</span><span className="ticket-value">{d.days}d / {d.nights}n</span></div>
-            <div><span className="ticket-label">Ages</span><span className="ticket-value">{d.age_min}–{d.age_max}</span></div>
+            <div><span className="ticket-label">Stay</span><span className="ticket-value">{d.days}d / {d.nights}n{includeFlightCosts && hasFlight ? " (+1)" : ""}</span></div>
           </div>
         </div>
 
@@ -134,6 +145,11 @@ export default function TicketWeekListing({ d, includeFlightCosts = false, favor
             Trip details
             <svg className="ticket-chevron" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
           </button>
+          {includeFlightCosts && (
+            <div className="ticket-flight-summary">
+              {hasFlight ? <>{IconPlane}<span>{compactFlightLine}</span></> : <span>Flight price unavailable</span>}
+            </div>
+          )}
           <div className="ticket-links">
             {googleFlights && <a className="ticket-link-button" href={googleFlights} target="_blank" rel="noreferrer">{IconPlane}<span>Google Flights</span></a>}
             <a className="ticket-link-button" href={d.url} target="_blank" rel="noreferrer">{IconTicket}<span>View UCPA</span></a>
