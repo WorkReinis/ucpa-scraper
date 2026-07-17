@@ -10,11 +10,13 @@ if (-not (git remote get-url origin 2>$null)) {
 }
 
 $temp = Join-Path ([System.IO.Path]::GetTempPath()) ("ucpa-data-" + [guid]::NewGuid().ToString("N"))
+$tempBranch = "data-bootstrap-" + [guid]::NewGuid().ToString("N")
 try {
   git worktree add --detach $temp HEAD
   if ($LASTEXITCODE -ne 0) { throw "Could not create the temporary data worktree." }
   Push-Location $temp
-  git switch --orphan data
+  git switch --orphan $tempBranch
+  if ($LASTEXITCODE -ne 0) { throw "Could not create the temporary orphan branch." }
   $trackedFiles = @(git ls-files)
   if ($trackedFiles.Count -gt 0) { git rm -rf -- . }
   Copy-Item -LiteralPath $databasePath -Destination "ucpa.db"
@@ -27,6 +29,7 @@ try {
 } finally {
   Pop-Location -ErrorAction SilentlyContinue
   git worktree remove --force $temp 2>$null
+  git branch -D $tempBranch 2>$null
 }
 
 Write-Host "The data branch now contains the current ucpa.db history."
