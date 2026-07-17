@@ -216,8 +216,9 @@
 
 .app-body {
   display: grid;
-  grid-template-columns: 300px 1fr;
-  gap: 24px;
+  grid-template-columns: 300px minmax(0, 880px);
+  justify-content: center;
+  gap: 16px;
   align-items: start;
 }
 
@@ -409,6 +410,8 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+  width: 100%;
+  max-width: 880px;
 }
 
 .results-loading { opacity: 0.5; transition: opacity 0.15s ease; }
