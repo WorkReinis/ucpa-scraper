@@ -100,7 +100,7 @@ export default function TicketWeekListing({ d, includeFlightCosts = false, favor
         <div className="ticket-image-wrap">
           {d.image_url
             ? <picture>
-                <source media="(min-width: 661px)" srcSet={cardImageUrl(d.image_url, 250, 376)} />
+                <source media="(min-width: 661px)" srcSet={cardImageUrl(d.image_url, 274, 376)} />
                 <img src={cardImageUrl(d.image_url, 1200, 256)} alt="" loading="lazy" />
               </picture>
             : <div className="ticket-image-fallback" aria-hidden="true"><span>{d.resort}</span></div>}
