@@ -373,15 +373,13 @@ export default function App() {
             </div>
           </section>
           <div className="footer-brand">
-            <span className="footer-brand-mark" aria-hidden="true">
-              <svg width="15" height="15" viewBox="0 0 32 32" fill="none">
-                <path d="M3.5 24.5 12.7 9.8l4.7 7.1 3.1-4.3 8 11.9h-25Z" fill="currentColor" />
-              </svg>
-            </span>
             <div className="footer-brand-copy">
-              <strong>Built by Reinis Pakulis</strong>
+              <strong>Your next mountain week, made simpler.</strong>
               <span>
                 Independent planner · Data from <a href="https://www.ucpa.com/" target="_blank" rel="noreferrer">UCPA</a> · Flights via SerpApi
+              </span>
+              <span className="footer-brand-attribution">
+                Independent project by Reinis <i aria-hidden="true">·</i> Data from <a href="https://www.ucpa.com/" target="_blank" rel="noreferrer">UCPA</a> and flight partners <i aria-hidden="true">·</i> Figures by <a href="https://fontawesome.com/" target="_blank" rel="noreferrer">Font Awesome</a>
               </span>
             </div>
           </div>
