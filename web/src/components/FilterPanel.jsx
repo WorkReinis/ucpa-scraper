@@ -105,6 +105,23 @@ export default function FilterPanel({
         ))}
       </Collapsible>
 
+      <Collapsible label="Age" activeCount={value.age ? 1 : 0}>
+        <div className="single-number-filter">
+          <input
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            aria-label="Your age"
+            placeholder={meta.ageRange?.min != null && meta.ageRange?.max != null
+              ? `${meta.ageRange.min}–${meta.ageRange.max}`
+              : "Your age"}
+            value={value.age}
+            onChange={(e) => wholePrice("age", e.target.value)}
+          />
+          <span>years old</span>
+        </div>
+      </Collapsible>
+
       <Collapsible label="Price" activeCount={value.minPrice || value.maxPrice ? 1 : 0}>
         <div className="range-row">
           <input

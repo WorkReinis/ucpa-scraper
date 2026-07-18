@@ -30,7 +30,15 @@ function fmtMinutes(minutes) {
 function levelTier(level) {
   if (!level) return "—";
   const parts = level.split(" - ");
-  return parts.length > 1 ? parts.at(-1) : level;
+  const value = parts.length > 1 ? parts.at(-1) : level;
+  return value.replace(/^intermediate to expert$/i, "Intermediate–expert");
+}
+
+function coachingLabel(value) {
+  if (value === "Full coaching") return "Full";
+  if (value === "Half-day coaching") return "Half-day";
+  if (value === "Individual (no coaching)") return "None";
+  return value || "None";
 }
 
 function googleFlightsUrl(d) {
@@ -116,8 +124,9 @@ export default function TicketWeekListing({ d, includeFlightCosts = false, favor
           </div>
           <div className="ticket-facts">
             <div><span className="ticket-label">Level</span><span className="ticket-value">{levelTier(d.level)}</span></div>
-            <div><span className="ticket-label">Coaching</span><span className="ticket-value">{d.instruction_type || "Independent"}{d.instructor_hours != null ? ` · ${d.instructor_hours}h` : ""}</span></div>
+            <div><span className="ticket-label">Coaching</span><span className="ticket-value">{coachingLabel(d.instruction_type)}</span></div>
             <div><span className="ticket-label">Stay</span><span className="ticket-value">{d.days}d / {d.nights}n{includeFlightCosts && hasFlight ? " (+1)" : ""}</span></div>
+            <div><span className="ticket-label">Age</span><span className="ticket-value">{d.age_min}–{d.age_max}</span></div>
           </div>
         </div>
 

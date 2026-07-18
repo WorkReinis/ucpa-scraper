@@ -1,5 +1,5 @@
-// Canonical beginner -> expert gradation, layered on top of UCPA's own level
-// labels. UCPA describes difficulty in a different vocabulary per activity --
+// Canonical beginner -> expert gradation, based on the minimum experience
+// required to join a package. UCPA describes difficulty in a different vocabulary per activity --
 // piste ability for Ski/Snowboard ("Débutant" .. "Initié à expert"), off-piste
 // terrain grading for hors-piste ("Découverte" / "All Mountain" / "Expert"),
 // and ski-touring difficulty for Splitboard ("R1" / "R2") -- none of which
@@ -25,10 +25,14 @@ export const TIER_ORDER = ["Beginner", "Novice", "Intermediate", "Advanced", "Ex
 export const LEVEL_TIERS = {
   "Snowboard - Débutant": "Beginner",
   "Ski - Débutant": "Beginner",
-  "Snowboard hors-piste - Découverte": "Novice",
-  "Ski hors-piste - Découverte": "Novice",
-  "Ski - initié à expert": "Intermediate",
-  "Snowboard - Initié à expert": "Intermediate",
+  // "Initié à expert" accepts UCPA's first post-beginner level, even though
+  // the same package also splits more experienced guests into suitable groups.
+  "Ski - initié à expert": "Novice",
+  "Snowboard - Initié à expert": "Novice",
+  // "Découverte" means discovering off-piste, not learning to ski: UCPA
+  // requires an already-confirmed piste skier or snowboarder.
+  "Snowboard hors-piste - Découverte": "Intermediate",
+  "Ski hors-piste - Découverte": "Intermediate",
   "Splitboard - R1": "Intermediate",
   "Ski de randonnée - Niveau 1": "Intermediate",
   "Snowboard hors-piste - All Mountain": "Advanced",

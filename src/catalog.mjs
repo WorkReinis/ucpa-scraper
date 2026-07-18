@@ -53,6 +53,9 @@ export function getFiltersData(db, { flightsConfigured = false } = {}) {
   const priceRangeRow = db.prepare(
     "SELECT MIN(price) min, MAX(price) max FROM v_week_current WHERE seats_left > 0"
   ).get();
+  const ageRangeRow = db.prepare(
+    "SELECT MIN(age_min) min, MAX(age_max) max FROM product WHERE age_min IS NOT NULL AND age_max IS NOT NULL"
+  ).get();
 
   return {
     resortsByRegion,
@@ -64,6 +67,7 @@ export function getFiltersData(db, { flightsConfigured = false } = {}) {
     tierCounts: tally((r) => [tierOf(r.level)]),
     instructionTypeCounts: tally((r) => [r.instruction_type]),
     priceRange: { min: priceRangeRow.min, max: priceRangeRow.max },
+    ageRange: { min: ageRangeRow.min, max: ageRangeRow.max },
     months: db
       .prepare("SELECT DISTINCT substr(start_date,1,7) v FROM v_week_current WHERE seats_left > 0 ORDER BY v")
       .all()
@@ -113,6 +117,12 @@ export function getWeeksData(db, q = {}) {
   matchByGroup("activity", q.activity, groupsOf);
   matchByGroup("level", q.tier, (level) => [tierOf(level)]);
   inFilter("instruction_type", q.instructionType);
+
+  if (q.age) {
+    const age = Number(q.age);
+    where.push("wl.age_min <= ? AND wl.age_max >= ?");
+    params.push(age, age);
+  }
 
   if (q.minPrice) { where.push("wl.price >= ?"); params.push(Number(q.minPrice)); }
   if (q.maxPrice) { where.push("wl.price <= ?"); params.push(Number(q.maxPrice)); }

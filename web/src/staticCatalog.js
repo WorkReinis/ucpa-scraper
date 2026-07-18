@@ -4,6 +4,7 @@ export function matchesCatalogFilters(row, filters) {
   if (filters.tier?.length && !filters.tier.includes(row.tier)) return false;
   if (filters.instructionType?.length && !filters.instructionType.includes(row.instruction_type)) return false;
   if (filters.month?.length && !filters.month.includes(row.start_date?.slice(0, 7))) return false;
+  if (filters.age && (row.age_min > Number(filters.age) || row.age_max < Number(filters.age))) return false;
   if (filters.minPrice && row.price < Number(filters.minPrice)) return false;
   if (filters.maxPrice && row.price > Number(filters.maxPrice)) return false;
   return true;

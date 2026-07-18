@@ -21,6 +21,7 @@ const filterCases = [
   { tier: ["Advanced"] },
   { resort: ["Tignes"] },
   { instructionType: ["Full coaching"] },
+  { age: "30" },
   { month: ["2027-01"] },
   { minPrice: "700", maxPrice: "900" },
   { activity: ["Snowboard"], tier: ["Beginner"], month: ["2026-12"] },

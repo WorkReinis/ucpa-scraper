@@ -70,6 +70,7 @@ const DEFAULT_FILTERS = {
   activity: [],
   tier: [],
   instructionType: [],
+  age: "",
   minPrice: "",
   maxPrice: "",
   month: [],
@@ -96,6 +97,7 @@ function hasActiveFilters(filters, favOnly) {
     filters.tier.length > 0 ||
     filters.instructionType.length > 0 ||
     filters.month.length > 0 ||
+    Boolean(filters.age) ||
     Boolean(filters.minPrice) ||
     Boolean(filters.maxPrice) ||
     favOnly
@@ -125,6 +127,7 @@ export default function App() {
     activity: filters.activity,
     tier: filters.tier,
     instructionType: filters.instructionType,
+    age: filters.age,
     minPrice: filters.minPrice,
     maxPrice: filters.maxPrice,
     month: filters.month,

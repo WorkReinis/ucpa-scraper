@@ -6,17 +6,19 @@ const rows = [
   {
     code: "ski1", resort: "Tignes", activity_groups: ["Ski", "Ski touring"],
     tier: "Advanced", instruction_type: "full-day", start_date: "2026-12-06", price: 945,
+    age_min: 18, age_max: 55,
   },
   {
     code: "snow1", resort: "Les Arcs", activity_groups: ["Snowboard"],
     tier: "Beginner", instruction_type: "half-day", start_date: "2027-01-10", price: 700,
+    age_min: 18, age_max: 25,
   },
 ];
 
 test("static filtering matches every hosted filter dimension", () => {
   const filters = {
     resort: ["Tignes"], activity: ["Ski touring"], tier: ["Advanced"],
-    instructionType: ["full-day"], month: ["2026-12"], minPrice: "900", maxPrice: "1000",
+    instructionType: ["full-day"], month: ["2026-12"], age: "40", minPrice: "900", maxPrice: "1000",
   };
   assert.equal(matchesCatalogFilters(rows[0], filters), true);
   assert.equal(matchesCatalogFilters(rows[1], filters), false);
@@ -30,6 +32,11 @@ test("empty filters retain the complete catalogue in stable order", () => {
 test("package-price filters do not include flight cost", () => {
   const withFlight = { ...rows[1], flight_price: 500 };
   assert.equal(matchesCatalogFilters(withFlight, { minPrice: "800" }), false);
+});
+
+test("age filtering keeps packages whose advertised range includes the user", () => {
+  assert.deepEqual(filterCatalog(rows, { age: "30" }).map((row) => row.code), ["ski1"]);
+  assert.deepEqual(filterCatalog(rows, { age: "25" }).map((row) => row.code), ["ski1", "snow1"]);
 });
 
 test("favorites can reveal a listing beyond the first 20 results", () => {

@@ -35,6 +35,15 @@ export default function ActiveFilters({ filters, onChange, favOnly, onFavOnlyCha
     });
   }
 
+  if (filters.age) {
+    chips.push({
+      id: "age",
+      group: "Age",
+      label: filters.age,
+      remove: () => onChange({ ...filters, age: "" }),
+    });
+  }
+
   if (favOnly) {
     chips.push({ id: "favorites", group: "View", label: "Favorites", remove: () => onFavOnlyChange(false) });
   }
