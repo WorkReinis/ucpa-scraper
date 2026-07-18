@@ -105,7 +105,7 @@ export default function FilterPanel({
         ))}
       </Collapsible>
 
-      <Collapsible label="UCPA age group" activeCount={value.ageGroup.length}>
+      <Collapsible label="Age" activeCount={value.ageGroup.length}>
         {meta.ageGroups.map((group) => (
           <Checkbox key={group} checked={value.ageGroup.includes(group)} onChange={() => toggleIn("ageGroup", group)} count={countOf(meta.ageGroupCounts, group)}>
             {group.replace("-", "–")}
