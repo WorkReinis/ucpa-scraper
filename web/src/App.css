@@ -359,8 +359,15 @@
   align-items: start;
 }
 
+@media (max-width: 1180px) {
+  .app-header { position: static; }
+  .app-body {
+    grid-template-columns: minmax(0, 896px);
+    max-width: 896px;
+  }
+}
+
 @media (max-width: 960px) {
-  .app-body { grid-template-columns: 1fr; }
   .app-footer-row { grid-template-columns: minmax(0, 1fr) 1px minmax(0, 1fr); }
   .footer-brand { grid-column: 1 / -1; justify-content: flex-end; }
   .footer-brand-copy { padding-left: 0; border-left: 0; }
@@ -1190,7 +1197,8 @@
 
 /* Once the sidebar drops above the results, keep filters as a compact rail
    on both tablets and phones instead of spending a full screen on them. */
-@media (max-width: 960px) {
+@media (max-width: 1180px) {
+  .results-toolbar { top: 8px; }
   .filter-panel {
     position: static;
     top: auto;
@@ -1262,7 +1270,7 @@
   .app { padding: 12px 12px 48px; }
   .app-body { gap: 10px; }
 
-  .results-toolbar { position: static; top: auto; padding: 8px 9px; }
+  .results-toolbar { padding: 8px 9px; }
   .app-footer-row { grid-template-columns: 1fr; gap: 16px; padding: 20px 14px; }
   .app-footer-row::before { display: none; }
   .refresh-tracker:nth-of-type(2), .footer-brand { grid-column: 1; }
