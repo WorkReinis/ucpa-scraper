@@ -19,14 +19,17 @@ import {
 } from "./db.mjs";
 import { writeDiagnostic } from "./diagnostics.mjs";
 import { wholePrice } from "./validation.mjs";
-import { AIRPORT_GATEWAYS, DEST_AIRPORTS, gatewayForResort } from "./airports.mjs";
+import {
+  AIRPORT_CONFIG_KEY, AIRPORT_GATEWAYS, DEST_AIRPORTS, ORIGIN_AIRPORTS,
+  gatewayById, gatewayForResort,
+} from "./airports.mjs";
 
 // Origins are fixed (Amsterdam + Rotterdam); destinations are the
 // fly-to-the-Alps-or-Pyrenees candidates from the user's side. Google prices
 // the whole cross-product in one search; airports.mjs then partitions those
 // results into transfer-safe resort gateways. Adding a destination therefore
 // does not increase the provider request count.
-const ORIGIN_AIRPORTS = "AMS,RTM";
+const ORIGIN_AIRPORT_IDS = ORIGIN_AIRPORTS.join(",");
 const DEST_AIRPORT_IDS = DEST_AIRPORTS.join(",");
 
 export const MONTHLY_SEARCH_LIMIT = 225;
@@ -67,7 +70,7 @@ function addDays(iso, days) {
 async function searchFlights(outboundDate, returnDate, apiKey, gateways) {
   const params = new URLSearchParams({
     engine: "google_flights",
-    departure_id: ORIGIN_AIRPORTS,
+    departure_id: ORIGIN_AIRPORT_IDS,
     arrival_id: DEST_AIRPORT_IDS,
     type: "1", // round trip
     outbound_date: outboundDate,
@@ -125,7 +128,7 @@ export function parseFlightResponse(j, {
   );
 
   const row = {
-    origins: ORIGIN_AIRPORTS,
+    origins: ORIGIN_AIRPORT_IDS,
     dests: dests.join(","),
     gateway,
     outbound_date: outboundDate,
@@ -206,7 +209,7 @@ export async function runFlightRefresh({ db } = {}) {
     "SELECT COUNT(*) n FROM flight_search WHERE billing_month = ?"
   ).get(billingMonth).n;
   const freshQuotes = _db.prepare(
-    `SELECT gateway FROM flight_price
+    `SELECT gateway, dests FROM flight_price
      WHERE outbound_date = ? AND return_date = ?
        AND date(fetched_at) > date('now', ?)
      GROUP BY gateway`
@@ -214,6 +217,7 @@ export async function runFlightRefresh({ db } = {}) {
   const recentAttempts = _db.prepare(
     `SELECT COUNT(*) n FROM flight_search
      WHERE outbound_date = ? AND return_date = ?
+       AND config_key = ?
        AND date(attempted_at) > date('now', ?)`
   );
   const freshnessWindow = `-${FLIGHT_REFRESH_DAYS} days`;
@@ -232,13 +236,15 @@ export async function runFlightRefresh({ db } = {}) {
   };
   for (const { start_date, end_date, gatewayIds } of pairs) {
     const flightDate = addDays(start_date, -FLIGHT_DEPART_DAYS_BEFORE);
-    const freshGatewayIds = new Set(
-      freshQuotes.all(flightDate, end_date, freshnessWindow).map((row) => row.gateway)
+    const freshGatewayDests = new Map(
+      freshQuotes.all(flightDate, end_date, freshnessWindow).map((row) => [row.gateway, row.dests])
     );
     const policy = flightPolicy({
       monthlyAttempts,
-      recentAttempts: recentAttempts.get(flightDate, end_date, freshnessWindow).n,
-      hasFreshQuote: [...gatewayIds].every((id) => freshGatewayIds.has(id)),
+      recentAttempts: recentAttempts.get(flightDate, end_date, AIRPORT_CONFIG_KEY, freshnessWindow).n,
+      hasFreshQuote: [...gatewayIds].every((id) =>
+        freshGatewayDests.get(id) === gatewayById(id).airports.join(",")
+      ),
     });
     if (policy !== "search") {
       summary.skipped++;
@@ -251,6 +257,7 @@ export async function runFlightRefresh({ db } = {}) {
       returnDate: end_date,
       weekKey: refreshKey,
       billingMonth,
+      configKey: AIRPORT_CONFIG_KEY,
     });
     monthlyAttempts++;
     try {

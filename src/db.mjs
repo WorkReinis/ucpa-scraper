@@ -135,6 +135,7 @@ CREATE TABLE IF NOT EXISTS flight_search (
   attempted_at   TEXT NOT NULL,
   week_key       TEXT NOT NULL,
   billing_month  TEXT NOT NULL,
+  config_key     TEXT NOT NULL,
   status         TEXT NOT NULL,
   error          TEXT
 );
@@ -300,6 +301,12 @@ function migrateLegacyNames(db) {
       db.exec("ALTER TABLE flight_price ADD COLUMN details_scope TEXT NOT NULL DEFAULT 'outbound'");
     }
   }
+  if (hasTable("flight_search")) {
+    const cols = db.prepare("PRAGMA table_info(flight_search)").all().map((c) => c.name);
+    if (!cols.includes("config_key")) {
+      db.exec("ALTER TABLE flight_search ADD COLUMN config_key TEXT NOT NULL DEFAULT 'legacy'");
+    }
+  }
   // Remove a legacy Lyon-only transport-price column. Transport-inclusive
   // UCPA routes are no longer part of this application.
   if (hasTable("week")) {
@@ -394,13 +401,15 @@ export function insertFlightPrice(db, r) {
   );
 }
 
-export function startFlightSearch(db, { outboundDate, returnDate, weekKey, billingMonth }) {
+export function startFlightSearch(db, {
+  outboundDate, returnDate, weekKey, billingMonth, configKey = "legacy",
+}) {
   const attemptedAt = new Date().toISOString();
   const result = db.prepare(
     `INSERT INTO flight_search
-       (outbound_date, return_date, attempted_at, week_key, billing_month, status)
-     VALUES (?, ?, ?, ?, ?, 'started')`
-  ).run(outboundDate, returnDate, attemptedAt, weekKey, billingMonth);
+       (outbound_date, return_date, attempted_at, week_key, billing_month, config_key, status)
+     VALUES (?, ?, ?, ?, ?, ?, 'started')`
+  ).run(outboundDate, returnDate, attemptedAt, weekKey, billingMonth, configKey);
   return Number(result.lastInsertRowid);
 }
 

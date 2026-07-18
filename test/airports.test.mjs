@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  AIRPORT_GATEWAYS, DEST_AIRPORTS, gatewayForResort, validateResortAirportAssignments,
+  AIRPORT_GATEWAYS, DEST_AIRPORTS, ORIGIN_AIRPORTS, gatewayForResort,
+  validateResortAirportAssignments,
 } from "../src/airports.mjs";
 import { parseFlightResponse } from "../src/flights.mjs";
 
@@ -22,9 +23,10 @@ test("every airport gateway has unique resorts and valid IATA codes", () => {
   const resorts = AIRPORT_GATEWAYS.flatMap((gateway) => gateway.resorts);
   assert.equal(new Set(resorts).size, resorts.length);
   assert.ok(DEST_AIRPORTS.every((code) => /^[A-Z]{3}$/.test(code)));
+  assert.deepEqual(ORIGIN_AIRPORTS, ["AMS", "RTM"]);
   assert.deepEqual(gatewayForResort("Saint-Lary Soulan").airports, ["LDE", "TLS"]);
-  assert.deepEqual(gatewayForResort("Chamonix").airports, ["GVA"]);
-  assert.deepEqual(gatewayForResort("Queyras").airports, ["MRS"]);
+  assert.deepEqual(gatewayForResort("Chamonix").airports, ["GVA", "LYS"]);
+  assert.deepEqual(gatewayForResort("Queyras").airports, ["MRS", "TRN"]);
 });
 
 test("one multi-airport response is partitioned into resort-safe gateway quotes", () => {
