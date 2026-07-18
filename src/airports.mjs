@@ -22,7 +22,7 @@ export const AIRPORT_GATEWAYS = [
   },
   {
     id: "queyras",
-    airports: ["MRS", "TRN"],
+    airports: ["MRS", "TRN", "LYS"],
     resorts: ["Queyras"],
     evidence: "https://www.queyras-locations.fr/en/access-queyras",
   },

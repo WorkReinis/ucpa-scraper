@@ -26,7 +26,7 @@ test("every airport gateway has unique resorts and valid IATA codes", () => {
   assert.deepEqual(ORIGIN_AIRPORTS, ["AMS", "RTM"]);
   assert.deepEqual(gatewayForResort("Saint-Lary Soulan").airports, ["LDE", "TLS"]);
   assert.deepEqual(gatewayForResort("Chamonix").airports, ["GVA", "LYS"]);
-  assert.deepEqual(gatewayForResort("Queyras").airports, ["MRS", "TRN"]);
+  assert.deepEqual(gatewayForResort("Queyras").airports, ["MRS", "TRN", "LYS"]);
 });
 
 test("one multi-airport response is partitioned into resort-safe gateway quotes", () => {
