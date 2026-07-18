@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { filterCatalog, filterFavoriteWeeks, matchesCatalogFilters } from "../web/src/staticCatalog.js";
+import { filterCatalog, filterFavoriteWeeks, matchesCatalogFilters, sortCatalogForDisplay } from "../web/src/staticCatalog.js";
 
 const rows = [
   {
@@ -39,4 +39,16 @@ test("favorites can reveal a listing beyond the first 20 results", () => {
   }));
   const result = filterFavoriteWeeks(manyRows, ["trip24-2027-01-10"], true);
   assert.deepEqual(result.map((row) => row.code), ["trip24"]);
+});
+
+test("explicit sold-out listings always sort after bookable listings", () => {
+  const bookable = { code: "available", start_date: "2027-02-01", price: 1000, seats_left: 1 };
+  const soldOutCheap = { code: "sold-cheap", start_date: "2026-12-01", price: 100, seats_left: 0 };
+  const soldOutPricy = { code: "sold-pricy", start_date: "2027-01-01", price: 200, seats_left: 0 };
+
+  for (const sort of ["price_asc", "price_desc", "soonest"]) {
+    const result = sortCatalogForDisplay([soldOutCheap, bookable, soldOutPricy], sort, true);
+    assert.equal(result[0].code, "available");
+    assert.deepEqual(new Set(result.slice(1).map((row) => row.code)), new Set(["sold-cheap", "sold-pricy"]));
+  }
 });

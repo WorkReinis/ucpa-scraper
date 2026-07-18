@@ -31,8 +31,8 @@ export function createApiApp() {
 
   // The primary listing: one row per (product, specific week), not grouped by
   // product -- filters apply directly against each week's own price/date/seats.
-  // Sold-out weeks are never returned, unconditionally -- there's nothing to
-  // book, so nothing to list.
+  // Explicit zero-stock weeks are returned after bookable weeks so the UI can
+  // show genuine sell-outs. We do not infer sold-out from a missing offer.
   app.get("/api/weeks", (req, res) => {
     res.json(getWeeksData(db, req.query));
   });

@@ -87,7 +87,10 @@ export function getFiltersData(db, { flightsConfigured = false } = {}) {
 }
 
 export function getWeeksData(db, q = {}) {
-  const where = ["seats_left > 0"];
+  // UCPA keeps zero-stock offers in offersInfo. Preserve those explicit
+  // sold-out rows as useful demand history; null stock is not an authoritative
+  // sold-out signal and stays hidden.
+  const where = ["seats_left IS NOT NULL"];
   const params = [];
 
   const inFilter = (col, val) => {
@@ -137,6 +140,6 @@ export function getWeeksData(db, q = {}) {
       ON fp.outbound_date = date(wl.start_date, '-1 day') AND fp.return_date = wl.end_date
       AND fp.gateway = ${gatewayCaseSql("wl.resort")}
     WHERE ${where.join(" AND ")}
-    ORDER BY ${orderBy}`;
+    ORDER BY (wl.seats_left <= 0) ASC, ${orderBy}`;
   return db.prepare(sql).all(...params).map(translateListing);
 }

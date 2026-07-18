@@ -5,7 +5,7 @@ import ActiveFilters from "./components/ActiveFilters";
 import WeekListing from "./components/WeekListing";
 import TicketWeekListing from "./components/TicketWeekListing";
 import useFavorites from "./useFavorites";
-import { filterFavoriteWeeks } from "./staticCatalog";
+import { filterFavoriteWeeks, sortCatalogForDisplay } from "./staticCatalog";
 import { IconLayoutCompact, IconLayoutDetailed, IconPlane, IconSearch, IconTicket } from "./icons";
 import "./App.css";
 
@@ -63,28 +63,6 @@ function nextFlightRefresh(lastRefresh, now = new Date(), cadenceDays = 6, time 
 
 function weekKey(d) {
   return `${d.code}-${d.start_date}`;
-}
-
-// Package price alone, same fallback WeekListing uses when there's no flight
-// quote yet: the flight cost just contributes nothing rather than the whole
-// week dropping out of a price sort.
-function totalPrice(d) {
-  return d.price + (Number.isFinite(d.flight_price) ? d.flight_price : 0);
-}
-
-// Sorting never changes which weeks belong in the result set, so keep it
-// entirely client-side. Besides making combined package+flight sorting
-// accurate, this avoids a redundant request/loading flash on every sort.
-function sortForDisplay(list, sort, includeFlightCosts) {
-  if (sort === "soonest") {
-    return [...list].sort((a, b) => a.start_date.localeCompare(b.start_date));
-  }
-  if (sort === "price_asc" || sort === "price_desc") {
-    const priceOf = includeFlightCosts ? totalPrice : (week) => week.price;
-    const direction = sort === "price_desc" ? -1 : 1;
-    return [...list].sort((a, b) => direction * (priceOf(a) - priceOf(b)));
-  }
-  return list;
 }
 
 const DEFAULT_FILTERS = {
@@ -186,7 +164,7 @@ export default function App() {
     setFavOnly(false);
   }
 
-  const sortedWeeks = sortForDisplay(weeks, filters.sort, includeFlightCosts);
+  const sortedWeeks = sortCatalogForDisplay(weeks, filters.sort, includeFlightCosts);
   const favFilteredWeeks = filterFavoriteWeeks(sortedWeeks, favorites, favOnly);
   const displayedWeeks = favFilteredWeeks.slice(0, visibleWeeks);
   const remainingWeeks = Math.max(favFilteredWeeks.length - displayedWeeks.length, 0);

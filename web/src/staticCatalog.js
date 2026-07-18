@@ -18,3 +18,28 @@ export function filterFavoriteWeeks(rows, favorites, enabled) {
   const wanted = new Set(favorites);
   return rows.filter((row) => wanted.has(`${row.code}-${row.start_date}`));
 }
+
+function totalPrice(row) {
+  return row.price + (Number.isFinite(row.flight_price) ? row.flight_price : 0);
+}
+
+export function isSoldOut(row) {
+  return Number.isFinite(Number(row.seats_left)) && Number(row.seats_left) <= 0;
+}
+
+// Sold-out weeks remain visible evidence, but never outrank a bookable week,
+// regardless of the selected price/date sort.
+export function sortCatalogForDisplay(rows, sort, includeFlightCosts) {
+  const priceOf = includeFlightCosts ? totalPrice : (row) => row.price;
+  const direction = sort === "price_desc" ? -1 : 1;
+
+  return [...rows].sort((a, b) => {
+    const availabilityOrder = Number(isSoldOut(a)) - Number(isSoldOut(b));
+    if (availabilityOrder !== 0) return availabilityOrder;
+    if (sort === "soonest") return a.start_date.localeCompare(b.start_date);
+    if (sort === "price_asc" || sort === "price_desc") {
+      return direction * (priceOf(a) - priceOf(b));
+    }
+    return 0;
+  });
+}

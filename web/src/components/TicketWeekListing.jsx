@@ -56,8 +56,9 @@ export default function TicketWeekListing({ d, includeFlightCosts = false, favor
   const [pulse, setPulse] = useState(false);
   const detailsId = useId();
   const hasFlight = Number.isFinite(d.flight_price);
+  const soldOut = Number(d.seats_left) <= 0;
   const totalPrice = d.price + (hasFlight ? d.flight_price : 0);
-  const seatsTier = d.seats_left <= 2 ? "critical" : d.seats_left <= 5 ? "low" : "ok";
+  const seatsTier = soldOut ? "sold-out" : d.seats_left <= 2 ? "critical" : d.seats_left <= 5 ? "low" : "ok";
   const googleFlights = googleFlightsUrl(d);
   const compactFlightLine = [
     `${fmtShortDate(d.flight_depart_date)} – ${fmtShortDate(d.flight_return_date, true)}`,
@@ -81,7 +82,7 @@ export default function TicketWeekListing({ d, includeFlightCosts = false, favor
   }
 
   return (
-    <article className={`ticket-week-card${open ? " open" : ""}${favorited ? " favorited" : ""}`}>
+    <article className={`ticket-week-card${open ? " open" : ""}${favorited ? " favorited" : ""}${soldOut ? " sold-out" : ""}`}>
       <div className="ticket-main" role="button" tabIndex={0} aria-expanded={open} aria-controls={detailsId} onClick={toggle}
         onKeyDown={(event) => {
           if (event.key === "Enter" || event.key === " ") {
@@ -101,6 +102,7 @@ export default function TicketWeekListing({ d, includeFlightCosts = false, favor
           <div className="ticket-eyebrow-row">
             <span className="ticket-eyebrow">{d.title}</span>
             {Boolean(d.is_new) && <span className="ticket-stamp">New</span>}
+            {soldOut && <span className="ticket-stamp ticket-stamp-sold-out">Sold out</span>}
           </div>
           <div className="ticket-hero">
             <div>
@@ -131,7 +133,7 @@ export default function TicketWeekListing({ d, includeFlightCosts = false, favor
             {includeFlightCosts && !hasFlight && <div className="ticket-price-breakdown">Flight price unavailable</div>}
           </div>
           <div className="ticket-seat-block">
-            <div className={`ticket-seats ticket-seats-${seatsTier}`}>{d.seats_left} seat{d.seats_left === 1 ? "" : "s"} left</div>
+            <div className={`ticket-seats ticket-seats-${seatsTier}`}>{soldOut ? "Sold out" : `${d.seats_left} seat${d.seats_left === 1 ? "" : "s"} left`}</div>
           </div>
           <div className="ticket-barcode" aria-hidden="true"><span className="ticket-bars" /><span className="ticket-barcode-code">{barcodeCode(d)}</span></div>
         </div>
