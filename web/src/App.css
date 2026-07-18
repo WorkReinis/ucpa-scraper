@@ -1093,8 +1093,15 @@
 .ticket-main { display: grid; grid-template-columns: 137px 1px minmax(0, 1fr) 1px 235px; height: 188px; cursor: pointer; }
 .ticket-main:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .ticket-image-wrap { position: relative; min-height: 188px; overflow: hidden; background: var(--ticket-soft); }
-.activity-artwork { position: absolute; inset: 0; }
-.activity-artwork-canvas { display: block; width: 100%; height: 100%; }
+.activity-artwork {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: linear-gradient(to bottom, var(--art-sky) 0 70%, var(--art-ground) 70% 100%);
+}
+.activity-artwork-canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
+.activity-artwork-background { z-index: 0; }
+.activity-artwork-sprite-layer { z-index: 1; }
 .activity-artwork-landscape { display: none; }
 .activity-artwork-ski { --art-sky: #c6dbed; --art-mid: #759dc0; --art-peak: #c5d8e7; --art-ground: #97b8d0; --art-detail: #628fb3; --art-structure: #5f83a1; }
 .activity-artwork-snowboard { --art-sky: #ead8ca; --art-mid: #b57d58; --art-peak: #dec5b3; --art-ground: #cda98e; --art-detail: #9f6947; --art-structure: #87583c; }

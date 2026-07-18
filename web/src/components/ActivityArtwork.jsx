@@ -73,6 +73,57 @@ function Scene({ name }) {
   return <ResortScene />;
 }
 
+function ResortLandscapeScene() {
+  return <>
+    <path className="activity-art-mountain" d="M-18 139 72 62l55 48 96-80 84 95 72-62 61 55 91-76 91 98v48H-18Z" />
+    <path className="activity-art-snowcap" d="m72 62 55 48 96-80 35 40-34-17-29 25-33-18-35 50Zm307 1 61 55 91-76 38 41-37-18-28 25-31-18-33 46Z" />
+    <path className="activity-art-snow" d="M-12 143c93-23 164-12 238-3s157 13 386-20v68H-12Z" />
+    <path className="activity-art-piste" d="M-4 158c135-17 251-8 367-12s167-16 241-29M-5 172c137-16 252-7 369-11s166-15 240-28" />
+    <path className="activity-art-lift" d="M18 83 579 48M66 80v63M278 67v65M505 53v63M131 76v12h20V75M360 62v12h20V61M530 51v12h20V50" />
+    <path className="activity-art-building" d="M74 127h38v21H74zM69 127l24-17 24 17M470 121h42v23h-42zM465 121l26-18 26 18" />
+  </>;
+}
+
+function GladeLandscapeScene() {
+  return <>
+    <path className="activity-art-mountain" d="M-20 143 91 52l58 54 91-71 83 91 76-68 64 55 80-72 79 102v45H-20Z" />
+    <path className="activity-art-snowcap" d="m91 52 58 54 91-71 36 39-36-16-29 24-31-18-31 42Zm308 6 64 55 80-72 32 42-32-18-25 24-28-18-27 42Z" />
+    <path className="activity-art-snow" d="M-12 145c70-31 129-22 185-4s107 17 163-3 121-19 276-8v58H-12Z" />
+    <g className="activity-art-trees">
+      <path d="m20 146 15-35 15 35h-9l13 23H16l13-23Zm79-11 12-29 13 29h-8l11 20H95l10-20Zm372 7 14-34 15 34h-9l13 23h-38l13-23Zm91-15 11-27 12 27h-7l10 19h-30l10-19Z" />
+    </g>
+    <path className="activity-art-powder" d="M-2 166c87-24 157-20 222-2s127 16 190-3 126-21 198-9" />
+  </>;
+}
+
+function AlpineLandscapeScene() {
+  return <>
+    <path className="activity-art-mountain" d="M-22 148 64 75l47 35 94-79 64 73 61-55 78 78 70-67 48 48 58-72 88 112v40H-22Z" />
+    <path className="activity-art-snowcap" d="m64 75 47 35 94-79 31 35-31-13-28 22-27-17-39 52Zm266-26 78 78 70-67 29 30-29-12-22 20-25-15-23 44Zm196 59 58-72 35 44-34-19-24 28Z" />
+    <path className="activity-art-snow" d="M-12 151c102-27 184-17 260 1s151 20 364-19v55H-12Z" />
+    <path className="activity-art-route" d="M30 175c76-20 104-47 143-76s72-41 118-60m-9 3 11-8 1 13M410 171c32-31 48-53 67-77s38-39 73-54" />
+    <path className="activity-art-building" d="M478 135h34v19h-34zM473 135l22-15 22 15" />
+  </>;
+}
+
+function RidgeLandscapeScene() {
+  return <>
+    <path className="activity-art-mountain" d="M-20 146 78 65l52 45 83-76 71 79 75-65 70 75 73-61 48 46 54-69 88 107v42H-20Z" />
+    <path className="activity-art-snowcap" d="m78 65 52 45 83-76 34 38-34-17-27 24-29-18-27 49Zm281-17 70 75 73-61 28 28-29-10-22 19-24-15-26 39Zm171 60 54-69 34 42-34-17-23 26Z" />
+    <path className="activity-art-snow" d="M-12 153c81-41 155-30 221-6s126 21 182-2 119-26 221-10v53H-12Z" />
+    <path className="activity-art-powder" d="M-1 165c78-35 147-30 207-9s121 22 181-2 128-30 220-13" />
+    <g className="activity-art-trees"><path d="m29 155 13-31 14 31h-8l11 20H24l12-20Zm103-13 11-27 12 27h-7l10 19h-31l11-19Zm337 12 13-31 14 31h-8l11 20h-35l12-20Zm84-18 11-26 11 26h-7l10 18h-29l10-18Z" /></g>
+    <path className="activity-art-route" d="M308 174c-17-31-18-57-4-81s18-43 9-61" />
+  </>;
+}
+
+function LandscapeScene({ name }) {
+  if (name === "glade") return <GladeLandscapeScene />;
+  if (name === "alpine") return <AlpineLandscapeScene />;
+  if (name === "ridge") return <RidgeLandscapeScene />;
+  return <ResortLandscapeScene />;
+}
+
 function Sprite({ type }) {
   if (type === "dual") return <g className="activity-art-sprite activity-art-sprite-dual">
     <svg x="-3" y="77" width="92" height="82" viewBox="0 0 576 512"><path d={SKIING_PATH} /></svg>
@@ -87,17 +138,21 @@ export default function ActivityArtwork({ listing }) {
   const kind = activityArtworkKind(listing);
   const art = ART[kind];
   return <div className={`activity-artwork activity-artwork-${art.palette}`} role="img" aria-label={`${art.label.toLowerCase()} illustration`}>
-    <svg className="activity-artwork-canvas activity-artwork-portrait" viewBox="0 0 137 188" aria-hidden="true">
+    <svg className="activity-artwork-canvas activity-artwork-background activity-artwork-portrait" viewBox="0 0 137 188" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
       <rect className="activity-art-sky" width="137" height="188" />
       <Scene name={art.scene} />
       {kind === "splitboard" && <path className="activity-art-split" d="M31 158 75 65M39 161l44-93" />}
+    </svg>
+    <svg className="activity-artwork-canvas activity-artwork-sprite-layer activity-artwork-portrait" viewBox="0 0 137 188" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
       <Sprite type={art.sprite} />
     </svg>
-    <svg className="activity-artwork-canvas activity-artwork-landscape" viewBox="0 0 600 188" aria-hidden="true">
+    <svg className="activity-artwork-canvas activity-artwork-background activity-artwork-landscape" viewBox="0 0 600 188" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
       <rect className="activity-art-sky" width="600" height="188" />
-      <g transform="scale(4.38 1)"><Scene name={art.scene} /></g>
+      <LandscapeScene name={art.scene} />
+      {kind === "splitboard" && <path className="activity-art-split" d="M263 158 307 65M271 161l44-93" />}
+    </svg>
+    <svg className="activity-artwork-canvas activity-artwork-sprite-layer activity-artwork-landscape" viewBox="0 0 600 188" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
       <g transform="translate(231.5 0)">
-        {kind === "splitboard" && <path className="activity-art-split" d="M31 158 75 65M39 161l44-93" />}
         <Sprite type={art.sprite} />
       </g>
     </svg>
