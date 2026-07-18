@@ -4,10 +4,10 @@ import { monthLabel } from "../formatters";
 // Collapsed by default -- the panel grows to fit whatever the user opens
 // instead of scrolling internally, so starting every group closed keeps it
 // short until they actually go looking for something.
-function Collapsible({ label, activeCount, defaultOpen = false, children }) {
+function Collapsible({ label, activeCount, defaultOpen = false, fitContent = false, children }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="filter-group">
+    <div className={`filter-group${fitContent ? " filter-group-fit-content" : ""}`}>
       <button type="button" className="filter-group-header" onClick={() => setOpen(!open)}>
         <span className="filter-group-title">
           {label}
@@ -60,7 +60,7 @@ export default function FilterPanel({
     <aside className="filter-panel">
       <h2>Filters</h2>
 
-      <Collapsible label="Start month" activeCount={value.month.length}>
+      <Collapsible label="Month" activeCount={value.month.length} fitContent>
         {meta.months.map((m) => (
           <Checkbox key={m} checked={value.month.includes(m)} onChange={() => toggleIn("month", m)}>
             {monthLabel(m)}
@@ -105,7 +105,7 @@ export default function FilterPanel({
         ))}
       </Collapsible>
 
-      <Collapsible label="Age" activeCount={value.ageGroup.length}>
+      <Collapsible label="Age" activeCount={value.ageGroup.length} fitContent>
         {meta.ageGroups.map((group) => (
           <Checkbox key={group} checked={value.ageGroup.includes(group)} onChange={() => toggleIn("ageGroup", group)} count={countOf(meta.ageGroupCounts, group)}>
             {group.replace("-", "–")}
@@ -140,7 +140,7 @@ export default function FilterPanel({
           Include flight costs
         </Toggle>}
         <Toggle checked={favOnly} onChange={onFavOnlyChange}>
-          Favorites only{favCount > 0 && <span className="switch-count">{favCount}</span>}
+          Favorites{favCount > 0 && <span className="switch-count">{favCount}</span>}
         </Toggle>
       </div>
     </aside>
