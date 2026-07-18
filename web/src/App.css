@@ -1221,6 +1221,7 @@
     max-height: 230px;
     margin-top: 7px;
     padding: 7px;
+    overflow-x: hidden;
     overflow-y: auto;
     border: 1px solid var(--border);
     border-radius: 10px;
@@ -1229,7 +1230,6 @@
   .filter-group-fit-content .filter-group-content {
     width: 136px;
     max-width: min(224px, calc(100vw - 30px));
-    overflow-x: hidden;
   }
   .filter-panel-switches { flex: 0 0 auto; border-top: 0; padding-top: 0; }
   .switch-row { min-height: 32px; gap: 10px; padding: 0 8px; white-space: nowrap; }
