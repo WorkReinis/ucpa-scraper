@@ -1,4 +1,4 @@
-import { monthLabel } from "./FilterPanel";
+import { monthLabel } from "../formatters";
 
 // One row per active filter value, each removable on its own, plus a
 // "Clear all". Reads the same `filters` object FilterPanel edits and calls
