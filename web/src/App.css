@@ -1181,18 +1181,9 @@
 .ticket-detail-column ul { display: grid; gap: 3px; margin: 0; padding: 0; list-style: none; }
 .ticket-dim { color: var(--ticket-muted) !important; font-size: 12px !important; }
 
-@media (max-width: 660px) {
-  .app-header-row { height: 56px; padding-inline: 14px; }
-  .logo-mark { width: 30px; height: 30px; border-radius: 9px; }
-  .brand { gap: 9px; }
-  .brand-text { font-size: 15px; }
-  .brand-tagline { margin-top: 1px; font-size: 9px; }
-  .app { padding: 12px 12px 48px; }
-  .app-body { gap: 10px; }
-
-  /* On a phone, filters work as a compact horizontal control rail. Opening
-     one group expands only that group below its pill; the page no longer
-     starts with a full-height accordion wall. */
+/* Once the sidebar drops above the results, keep filters as a compact rail
+   on both tablets and phones instead of spending a full screen on them. */
+@media (max-width: 960px) {
   .filter-panel {
     position: static;
     top: auto;
@@ -1231,6 +1222,33 @@
   .filter-panel-switches { flex: 0 0 auto; border-top: 0; padding-top: 0; }
   .switch-row { min-height: 32px; gap: 10px; padding: 0 8px; white-space: nowrap; }
   .switch { transform: scale(0.82); transform-origin: right center; }
+}
+
+/* Portrait-tablet ticket: retain the horizontal stub silhouette, but give
+   the information section enough room for an intentional four-column row. */
+@media (min-width: 721px) and (max-width: 860px) {
+  .app-body { gap: 12px; }
+  .ticket-main { grid-template-columns: 96px 1px minmax(0, 1fr) 1px 200px; }
+  .ticket-trip { padding-inline: 18px; }
+  .ticket-facts {
+    display: grid;
+    grid-template-columns: minmax(0, 1.55fr) minmax(0, 0.75fr) minmax(0, 1fr) minmax(0, 0.55fr);
+    gap: 8px;
+  }
+  .ticket-value { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+  .ticket-stub { padding: 18px 54px 18px 16px; }
+  .ticket-price-breakdown { max-width: 132px; }
+  .ticket-foot-row { padding-inline: 18px; }
+}
+
+@media (max-width: 720px) {
+  .app-header-row { height: 56px; padding-inline: 14px; }
+  .logo-mark { width: 30px; height: 30px; border-radius: 9px; }
+  .brand { gap: 9px; }
+  .brand-text { font-size: 15px; }
+  .brand-tagline { margin-top: 1px; font-size: 9px; }
+  .app { padding: 12px 12px 48px; }
+  .app-body { gap: 10px; }
 
   .results-toolbar { position: static; top: auto; padding: 8px 9px; }
   .app-footer-row { grid-template-columns: 1fr; gap: 16px; padding: 20px 14px; }
