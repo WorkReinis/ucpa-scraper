@@ -19,15 +19,15 @@ import {
 } from "./db.mjs";
 import { writeDiagnostic } from "./diagnostics.mjs";
 import { wholePrice } from "./validation.mjs";
+import { AIRPORT_GATEWAYS, DEST_AIRPORTS, gatewayForResort } from "./airports.mjs";
 
 // Origins are fixed (Amsterdam + Rotterdam); destinations are the
 // fly-to-the-Alps-or-Pyrenees candidates from the user's side. Google prices
-// the whole cross-product in one search and we keep whichever itinerary is
-// cheapest -- adding a destination here costs nothing extra query-wise, since
-// it remains one search. Transfer suitability is deliberately outside this
-// flight-price model.
+// the whole cross-product in one search; airports.mjs then partitions those
+// results into transfer-safe resort gateways. Adding a destination therefore
+// does not increase the provider request count.
 const ORIGIN_AIRPORTS = "AMS,RTM";
-const DEST_AIRPORTS = "LYS,ZRH,GVA,TRN,TLS";
+const DEST_AIRPORT_IDS = DEST_AIRPORTS.join(",");
 
 export const MONTHLY_SEARCH_LIMIT = 225;
 export const FLIGHT_REFRESH_DAYS = 6;
@@ -64,11 +64,11 @@ function addDays(iso, days) {
 
 /** One round-trip search covering all airport combos; returns the row shape
  *  insertFlightPrice expects. price null = Google had nothing for the pair. */
-async function searchFlights(outboundDate, returnDate, apiKey) {
+async function searchFlights(outboundDate, returnDate, apiKey, gateways) {
   const params = new URLSearchParams({
     engine: "google_flights",
     departure_id: ORIGIN_AIRPORTS,
-    arrival_id: DEST_AIRPORTS,
+    arrival_id: DEST_AIRPORT_IDS,
     type: "1", // round trip
     outbound_date: outboundDate,
     return_date: returnDate,
@@ -81,7 +81,9 @@ async function searchFlights(outboundDate, returnDate, apiKey) {
   if (!res.ok || j.error) throw new Error(j.error || `HTTP ${res.status} from SerpApi`);
 
   try {
-    return parseFlightResponse(j, { outboundDate, returnDate });
+    return gateways.map((gateway) => parseFlightResponse(j, {
+      outboundDate, returnDate, gateway: gateway.id, dests: gateway.airports,
+    }));
   } catch (error) {
     writeDiagnostic(
       `flights-${outboundDate}-${returnDate}-invalid-response`, j, "json", { secrets: [apiKey] }
@@ -90,7 +92,9 @@ async function searchFlights(outboundDate, returnDate, apiKey) {
   }
 }
 
-export function parseFlightResponse(j, { outboundDate, returnDate }) {
+export function parseFlightResponse(j, {
+  outboundDate, returnDate, gateway = "legacy", dests = DEST_AIRPORTS,
+}) {
   if (!j || typeof j !== "object" || Array.isArray(j)) throw new Error("invalid SerpApi response object");
   if (j.best_flights != null && !Array.isArray(j.best_flights)) throw new Error("best_flights is not an array");
   if (j.other_flights != null && !Array.isArray(j.other_flights)) throw new Error("other_flights is not an array");
@@ -106,19 +110,24 @@ export function parseFlightResponse(j, { outboundDate, returnDate }) {
   // don't store. flights[] is the outbound leg's segments.
   const rawItineraries = [...(j.best_flights ?? []), ...(j.other_flights ?? [])]
     .filter((it) => it.price != null);
-  const itineraries = rawItineraries.filter((it) => {
+  const validItineraries = rawItineraries.filter((it) => {
     const legs = it.flights;
     return wholePrice(it.price) > 0 && Array.isArray(legs) && legs.length > 0 && legs.every((leg) =>
       leg?.departure_airport?.id && leg?.arrival_airport?.id && leg?.airline
     );
   });
-  if (rawItineraries.length > 0 && itineraries.length === 0) {
+  if (rawItineraries.length > 0 && validItineraries.length === 0) {
     throw new Error("flight itineraries exist but do not match the expected schema");
   }
+  const allowedAirports = new Set(dests);
+  const itineraries = validItineraries.filter((it) =>
+    allowedAirports.has(it.flights.at(-1)?.arrival_airport?.id)
+  );
 
   const row = {
     origins: ORIGIN_AIRPORTS,
-    dests: DEST_AIRPORTS,
+    dests: dests.join(","),
+    gateway,
     outbound_date: outboundDate,
     return_date: returnDate,
     price: null,
@@ -168,15 +177,27 @@ export async function runFlightRefresh({ db } = {}) {
 
   const _db = db ?? open();
 
-  // Distinct weeks, not distinct products: every product sharing a
-  // Sat-to-Sat window shares one quote, which is what keeps a whole-season
-  // refresh inside the free tier.
-  const pairs = _db.prepare(
-    `SELECT DISTINCT start_date, end_date FROM v_week_current
-     WHERE seats_left > 0 AND end_date IS NOT NULL
-       AND start_date > date('now') AND start_date <= date('now', ?)
-     ORDER BY start_date`
+  // One provider request still covers a date pair, but its response is split
+  // into resort-safe gateway quotes before storage.
+  const pairRows = _db.prepare(
+    `SELECT DISTINCT w.start_date, w.end_date, p.resort
+     FROM v_week_current w JOIN product p ON p.code = w.code
+     WHERE w.seats_left > 0 AND w.end_date IS NOT NULL
+       AND w.start_date > date('now') AND w.start_date <= date('now', ?)
+     ORDER BY w.start_date`
   ).all(`+${MONTHS_AHEAD} months`);
+  const pairMap = new Map();
+  for (const row of pairRows) {
+    const gateway = gatewayForResort(row.resort);
+    if (!gateway) throw new Error(`No validated airport gateway for resort: ${row.resort}`);
+    const key = `${row.start_date}|${row.end_date}`;
+    const pair = pairMap.get(key) ?? {
+      start_date: row.start_date, end_date: row.end_date, gatewayIds: new Set(),
+    };
+    pair.gatewayIds.add(gateway.id);
+    pairMap.set(key, pair);
+  }
+  const pairs = [...pairMap.values()];
 
   const now = new Date();
   const refreshKey = now.toISOString().slice(0, 10);
@@ -184,11 +205,11 @@ export async function runFlightRefresh({ db } = {}) {
   let monthlyAttempts = _db.prepare(
     "SELECT COUNT(*) n FROM flight_search WHERE billing_month = ?"
   ).get(billingMonth).n;
-  const hasFreshQuote = _db.prepare(
-    `SELECT 1 FROM flight_price
+  const freshQuotes = _db.prepare(
+    `SELECT gateway FROM flight_price
      WHERE outbound_date = ? AND return_date = ?
        AND date(fetched_at) > date('now', ?)
-     LIMIT 1`
+     GROUP BY gateway`
   );
   const recentAttempts = _db.prepare(
     `SELECT COUNT(*) n FROM flight_search
@@ -209,12 +230,15 @@ export async function runFlightRefresh({ db } = {}) {
     quotaUsed: monthlyAttempts,
     quotaRemaining: Math.max(MONTHLY_SEARCH_LIMIT - monthlyAttempts, 0),
   };
-  for (const { start_date, end_date } of pairs) {
+  for (const { start_date, end_date, gatewayIds } of pairs) {
     const flightDate = addDays(start_date, -FLIGHT_DEPART_DAYS_BEFORE);
+    const freshGatewayIds = new Set(
+      freshQuotes.all(flightDate, end_date, freshnessWindow).map((row) => row.gateway)
+    );
     const policy = flightPolicy({
       monthlyAttempts,
       recentAttempts: recentAttempts.get(flightDate, end_date, freshnessWindow).n,
-      hasFreshQuote: Boolean(hasFreshQuote.get(flightDate, end_date, freshnessWindow)),
+      hasFreshQuote: [...gatewayIds].every((id) => freshGatewayIds.has(id)),
     });
     if (policy !== "search") {
       summary.skipped++;
@@ -230,14 +254,18 @@ export async function runFlightRefresh({ db } = {}) {
     });
     monthlyAttempts++;
     try {
-      const row = await searchFlights(flightDate, end_date, apiKey);
-      insertFlightPrice(_db, row);
-      finishFlightSearch(_db, searchId, row.price == null ? "no_result" : "success");
+      const gateways = AIRPORT_GATEWAYS.filter((gateway) => gatewayIds.has(gateway.id));
+      const rows = await searchFlights(flightDate, end_date, apiKey, gateways);
+      for (const row of rows) insertFlightPrice(_db, row);
+      const found = rows.filter((row) => row.price != null);
+      finishFlightSearch(_db, searchId, found.length ? "success" : "no_result");
       summary.searched++;
-      if (row.price == null) summary.noResult++;
+      if (!found.length) summary.noResult++;
       console.log(
         `  ${flightDate} -> ${end_date} (package starts ${start_date}): ` +
-        (row.price != null ? `€${row.price} ${row.dep_airport}->${row.arr_airport}` : "no flights found")
+        (found.length
+          ? found.map((row) => `${row.gateway}=€${row.price} ${row.dep_airport}->${row.arr_airport}`).join("; ")
+          : "no flights found")
       );
     } catch (e) {
       finishFlightSearch(_db, searchId, "failed", e.message);

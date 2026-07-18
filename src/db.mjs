@@ -100,14 +100,15 @@ CREATE TABLE IF NOT EXISTS watch (
 
 -- Tier 3: round-trip flight quotes (Google Flights via SerpApi, see
 -- src/flights.mjs). Append-only like observation/week: one row per
--- search, never UPDATEd. Keyed on the (outbound, return) date pair rather
--- than a product -- every product sharing the same week shares one quote.
+-- search, never UPDATEd. Keyed on a validated resort gateway plus the date
+-- pair, so packages share quotes only when their airports are compatible.
 -- price NULL means "searched, Google had nothing for these dates"; the row
 -- is inserted anyway so the freshness check treats the pair as covered
 -- instead of re-burning API quota on it every refresh.
 CREATE TABLE IF NOT EXISTS flight_price (
   origins        TEXT NOT NULL,   -- query as sent, e.g. "AMS,RTM"
-  dests          TEXT NOT NULL,   -- e.g. "LYS,ZRH"
+  dests          TEXT NOT NULL,   -- airports valid for this resort gateway
+  gateway        TEXT NOT NULL,   -- validated resort group from airports.mjs
   outbound_date  TEXT NOT NULL,   -- = week.start_date
   return_date    TEXT NOT NULL,   -- = week.end_date
   fetched_at     TEXT NOT NULL,
@@ -249,16 +250,15 @@ SELECT
 FROM v_week_current w
 JOIN product p ON p.code = w.code;
 
--- Latest flight quote per (outbound, return) date pair -- same collapse as
--- v_week_current. Deliberately NOT keyed on origins/dests: if the
--- airport lists in src/flights.mjs ever change, fresh quotes should simply
--- supersede the old ones, not coexist with them.
+-- Latest flight quote per gateway and date pair. This prevents a cheap Lyon
+-- itinerary from being attached to a Pyrenees package on the same dates.
 CREATE VIEW v_flight_current AS
 SELECT f.*
 FROM flight_price f
 WHERE f.fetched_at = (
   SELECT MAX(f2.fetched_at) FROM flight_price f2
   WHERE f2.outbound_date = f.outbound_date AND f2.return_date = f.return_date
+    AND f2.gateway = f.gateway
 );
 `;
 
@@ -290,6 +290,9 @@ function migrateLegacyNames(db) {
   }
   if (hasTable("flight_price")) {
     const cols = db.prepare("PRAGMA table_info(flight_price)").all().map((c) => c.name);
+    if (!cols.includes("gateway")) {
+      db.exec("ALTER TABLE flight_price ADD COLUMN gateway TEXT NOT NULL DEFAULT 'legacy'");
+    }
     if (!cols.includes("outbound_segments")) {
       db.exec("ALTER TABLE flight_price ADD COLUMN outbound_segments TEXT");
     }
@@ -380,12 +383,12 @@ export function upsertWeek(db, r) {
 export function insertFlightPrice(db, r) {
   db.prepare(
     `INSERT INTO flight_price
-       (origins, dests, outbound_date, return_date, fetched_at,
+       (origins, dests, gateway, outbound_date, return_date, fetched_at,
         price, dep_airport, arr_airport, airline, stops, duration_min,
         outbound_segments, details_scope, price_level)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
   ).run(
-    r.origins, r.dests, r.outbound_date, r.return_date, new Date().toISOString(),
+    r.origins, r.dests, r.gateway, r.outbound_date, r.return_date, new Date().toISOString(),
     r.price, r.dep_airport, r.arr_airport, r.airline, r.stops, r.duration_min,
     JSON.stringify(r.outbound_segments ?? []), r.details_scope ?? "outbound", r.price_level
   );

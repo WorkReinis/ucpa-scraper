@@ -3,6 +3,7 @@ import { tierOf, tierRank } from "./levels.mjs";
 import { groupsOf, groupsPresent } from "./activities.mjs";
 import { findUnknownCategories } from "./categories.mjs";
 import { FLIGHT_REFRESH_DAYS } from "./flights.mjs";
+import { gatewayCaseSql } from "./airports.mjs";
 
 function translateListing(row) {
   return {
@@ -123,6 +124,7 @@ export function getWeeksData(db, q = {}) {
     SELECT wl.*, wd.price_prev, wd.delta_eur, wd.seats_prev, wd.seats_delta,
            CASE WHEN wn.code IS NOT NULL THEN 1 ELSE 0 END AS is_new,
            fp.price AS flight_price, fp.dep_airport AS flight_dep, fp.arr_airport AS flight_arr,
+           fp.gateway AS flight_gateway,
            fp.airline AS flight_airline, fp.stops AS flight_stops,
            fp.duration_min AS flight_duration_min, fp.fetched_at AS flight_fetched_at,
            fp.outbound_segments AS flight_outbound_segments,
@@ -133,6 +135,7 @@ export function getWeeksData(db, q = {}) {
     LEFT JOIN v_week_new wn ON wn.code = wl.code AND wn.start_date = wl.start_date
     LEFT JOIN v_flight_current fp
       ON fp.outbound_date = date(wl.start_date, '-1 day') AND fp.return_date = wl.end_date
+      AND fp.gateway = ${gatewayCaseSql("wl.resort")}
     WHERE ${where.join(" AND ")}
     ORDER BY ${orderBy}`;
   return db.prepare(sql).all(...params).map(translateListing);

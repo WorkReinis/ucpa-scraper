@@ -7,7 +7,8 @@ import {
 test("flight storage preserves structured outbound segments and explicit scope", () => {
   const db = open(":memory:");
   insertFlightPrice(db, {
-    origins: "AMS,RTM", dests: "LYS", outbound_date: "2026-12-05", return_date: "2026-12-12",
+    origins: "AMS,RTM", dests: "LYS", gateway: "northern-alps",
+    outbound_date: "2026-12-05", return_date: "2026-12-12",
     price: 175, dep_airport: "AMS", arr_airport: "LYS", airline: "KLM + Air France",
     stops: 1, duration_min: 155, details_scope: "outbound",
     outbound_segments: [{ from: "AMS", to: "CDG" }, { from: "CDG", to: "LYS" }],
