@@ -38,7 +38,7 @@ export function getFiltersData(db, { flightsConfigured = false } = {}) {
 
   const distinct = (col) =>
     db.prepare(`SELECT DISTINCT ${col} v FROM product WHERE ${col} IS NOT NULL ORDER BY ${col}`).all().map((r) => r.v);
-  const facetRows = db.prepare("SELECT resort, activity, level, instruction_type FROM v_week_listing WHERE seats_left > 0").all();
+  const facetRows = db.prepare("SELECT resort, activity, level, instruction_type, age_min, age_max FROM v_week_listing WHERE seats_left > 0").all();
   const tally = (mapper) => {
     const counts = {};
     for (const row of facetRows) {
@@ -53,9 +53,10 @@ export function getFiltersData(db, { flightsConfigured = false } = {}) {
   const priceRangeRow = db.prepare(
     "SELECT MIN(price) min, MAX(price) max FROM v_week_current WHERE seats_left > 0"
   ).get();
-  const ageRangeRow = db.prepare(
-    "SELECT MIN(age_min) min, MAX(age_max) max FROM product WHERE age_min IS NOT NULL AND age_max IS NOT NULL"
-  ).get();
+  const ageGroups = [...new Set(facetRows
+    .filter((row) => row.age_min != null && row.age_max != null)
+    .map((row) => `${row.age_min}-${row.age_max}`))]
+    .sort((a, b) => Number(a.split("-")[1]) - Number(b.split("-")[1]));
 
   return {
     resortsByRegion,
@@ -66,8 +67,9 @@ export function getFiltersData(db, { flightsConfigured = false } = {}) {
     activityCounts: tally((r) => groupsOf(r.activity)),
     tierCounts: tally((r) => [tierOf(r.level)]),
     instructionTypeCounts: tally((r) => [r.instruction_type]),
+    ageGroups,
+    ageGroupCounts: tally((r) => r.age_min != null && r.age_max != null ? [`${r.age_min}-${r.age_max}`] : []),
     priceRange: { min: priceRangeRow.min, max: priceRangeRow.max },
-    ageRange: { min: ageRangeRow.min, max: ageRangeRow.max },
     months: db
       .prepare("SELECT DISTINCT substr(start_date,1,7) v FROM v_week_current WHERE seats_left > 0 ORDER BY v")
       .all()
@@ -118,10 +120,14 @@ export function getWeeksData(db, q = {}) {
   matchByGroup("level", q.tier, (level) => [tierOf(level)]);
   inFilter("instruction_type", q.instructionType);
 
-  if (q.age) {
-    const age = Number(q.age);
-    where.push("wl.age_min <= ? AND wl.age_max >= ?");
-    params.push(age, age);
+  if (q.ageGroup && (!Array.isArray(q.ageGroup) || q.ageGroup.length > 0)) {
+    const groups = [].concat(q.ageGroup).map((group) => {
+      const match = /^(\d+)-(\d+)$/.exec(group);
+      return match ? [Number(match[1]), Number(match[2])] : null;
+    }).filter(Boolean);
+    if (!groups.length) groups.push([-1, -1]);
+    where.push(`(${groups.map(() => "(wl.age_min = ? AND wl.age_max = ?)").join(" OR ")})`);
+    params.push(...groups.flat());
   }
 
   if (q.minPrice) { where.push("wl.price >= ?"); params.push(Number(q.minPrice)); }

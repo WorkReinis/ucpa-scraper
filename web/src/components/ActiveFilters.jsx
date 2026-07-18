@@ -10,6 +10,7 @@ const LIST_GROUPS = [
   { key: "activity", group: "Activity" },
   { key: "tier", group: "Level" },
   { key: "instructionType", group: "Instruction" },
+  { key: "ageGroup", group: "Age", label: (value) => value.replace("-", "–") },
 ];
 
 export default function ActiveFilters({ filters, onChange, favOnly, onFavOnlyChange, onClearAll }) {
@@ -32,15 +33,6 @@ export default function ActiveFilters({ filters, onChange, favOnly, onFavOnlyCha
       group: "Price",
       label: `€${filters.minPrice || "0"}–${filters.maxPrice || "∞"}`,
       remove: () => onChange({ ...filters, minPrice: "", maxPrice: "" }),
-    });
-  }
-
-  if (filters.age) {
-    chips.push({
-      id: "age",
-      group: "Age",
-      label: filters.age,
-      remove: () => onChange({ ...filters, age: "" }),
     });
   }
 

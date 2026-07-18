@@ -18,7 +18,7 @@ const rows = [
 test("static filtering matches every hosted filter dimension", () => {
   const filters = {
     resort: ["Tignes"], activity: ["Ski touring"], tier: ["Advanced"],
-    instructionType: ["full-day"], month: ["2026-12"], age: "40", minPrice: "900", maxPrice: "1000",
+    instructionType: ["full-day"], month: ["2026-12"], ageGroup: ["18-55"], minPrice: "900", maxPrice: "1000",
   };
   assert.equal(matchesCatalogFilters(rows[0], filters), true);
   assert.equal(matchesCatalogFilters(rows[1], filters), false);
@@ -34,9 +34,9 @@ test("package-price filters do not include flight cost", () => {
   assert.equal(matchesCatalogFilters(withFlight, { minPrice: "800" }), false);
 });
 
-test("age filtering keeps packages whose advertised range includes the user", () => {
-  assert.deepEqual(filterCatalog(rows, { age: "30" }).map((row) => row.code), ["ski1"]);
-  assert.deepEqual(filterCatalog(rows, { age: "25" }).map((row) => row.code), ["ski1", "snow1"]);
+test("age-group filtering matches UCPA's advertised brackets exactly", () => {
+  assert.deepEqual(filterCatalog(rows, { ageGroup: ["18-55"] }).map((row) => row.code), ["ski1"]);
+  assert.deepEqual(filterCatalog(rows, { ageGroup: ["18-25", "18-55"] }).map((row) => row.code), ["ski1", "snow1"]);
 });
 
 test("favorites can reveal a listing beyond the first 20 results", () => {
