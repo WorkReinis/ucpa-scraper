@@ -53,17 +53,46 @@ function outboundRoute(d) {
   return d.flight_dep && d.flight_arr ? `${d.flight_dep} → ${d.flight_arr}` : null;
 }
 
+// One carrier both ways (or a legacy round-trip row with no separate
+// return leg) reads as just "KLM"; only a genuine split trip names both.
+function airlineLabel(d) {
+  if (!d.flight_airline) return null;
+  if (d.flight_pricing_mode === "separate" && d.flight_return_airline && d.flight_return_airline !== d.flight_airline) {
+    return `${d.flight_airline} / ${d.flight_return_airline}`;
+  }
+  return d.flight_airline;
+}
+
+// A separately searched return is only a viability/schedule signal for a
+// round-trip fare; it is not guaranteed to be the return bundled into that
+// fare. Only expose a differing return route for an explicitly separate-ticket
+// strategy where both one-ways are the priced itinerary.
+function returnRouteLabel(d) {
+  if (d.flight_pricing_mode !== "separate") return null;
+  if (!d.flight_return_dep || !d.flight_return_arr) return null;
+  if (d.flight_return_dep === d.flight_arr && d.flight_return_arr === d.flight_dep) return null;
+  return `back ${d.flight_return_dep} → ${d.flight_return_arr}`;
+}
+
 function barcodeCode(d) {
   const resort = (d.resort || d.code || "UCPA").replace(/[^a-z0-9]/gi, "").slice(0, 3).toUpperCase();
   const [year = "", month = "", day = ""] = (d.start_date || "").split("-");
   return `${resort} · ${day}${MONTHS[Number(month) - 1]?.toUpperCase() || ""}${year.slice(-2)}`;
 }
 
-export default function TicketWeekListing({ d, includeFlightCosts = false, favorited = false, onToggleFavorite }) {
+export default function TicketWeekListing({ d, includeFlightCosts = false, earlyArrival = false, favorited = false, onToggleFavorite }) {
   const [open, setOpen] = useState(false);
   const [pulse, setPulse] = useState(false);
   const detailsId = useId();
   const hasFlight = Number.isFinite(d.flight_price);
+  // Three states behind the same null price: never quoted, quoted before
+  // this shuttle-window feature existed (details_scope 'outbound' -- no
+  // window was ever applied), or quoted under current rules with nothing
+  // viable. Only the last one earns the specific message; the first two
+  // are indistinguishable from "we haven't properly checked yet".
+  const flightUnavailableCopy = d.flight_fetched_at != null && d.flight_details_scope === "both"
+    ? "No flight fits the resort shuttle"
+    : "Flight price unavailable";
   const soldOut = Number(d.seats_left) <= 0;
   const totalPrice = d.price + (hasFlight ? d.flight_price : 0);
   const seatsTier = soldOut ? "sold-out" : d.seats_left <= 2 ? "critical" : d.seats_left <= 5 ? "low" : "ok";
@@ -71,9 +100,10 @@ export default function TicketWeekListing({ d, includeFlightCosts = false, favor
   const compactFlightLine = [
     `${fmtShortDate(d.flight_depart_date)} – ${fmtShortDate(d.flight_return_date, true)}`,
     outboundRoute(d),
-    d.flight_airline ? `${d.flight_airline} outbound` : null,
-    d.flight_stops != null ? (d.flight_stops === 0 ? "direct" : `${d.flight_stops} stop${d.flight_stops === 1 ? "" : "s"}`) : null,
+    airlineLabel(d),
+    d.flight_stops > 0 ? `${d.flight_stops} stop${d.flight_stops === 1 ? "" : "s"}` : null,
     fmtMinutes(d.flight_duration_min),
+    returnRouteLabel(d),
   ].filter(Boolean).join(" · ");
 
   function toggle() {
@@ -125,7 +155,7 @@ export default function TicketWeekListing({ d, includeFlightCosts = false, favor
           <div className="ticket-facts">
             <div><span className="ticket-label">Level</span><span className="ticket-value">{levelTier(d.level)}</span></div>
             <div><span className="ticket-label">Coaching</span><span className="ticket-value">{coachingLabel(d.instruction_type)}</span></div>
-            <div><span className="ticket-label">Stay</span><span className="ticket-value">{d.days}d / {d.nights}n{includeFlightCosts && hasFlight ? " (+1)" : ""}</span></div>
+            <div><span className="ticket-label">Stay</span><span className="ticket-value">{d.days}d / {d.nights}n{includeFlightCosts && hasFlight && earlyArrival ? " (+1)" : ""}</span></div>
             <div><span className="ticket-label">Age</span><span className="ticket-value">{d.age_min}–{d.age_max}</span></div>
           </div>
         </div>
@@ -139,7 +169,7 @@ export default function TicketWeekListing({ d, includeFlightCosts = false, favor
               {!includeFlightCosts && d.price_prev != null && d.delta_eur !== 0 && <span className="ticket-was">{fmtPrice(d.price_prev)}</span>}
             </div>
             {includeFlightCosts && hasFlight && <div className="ticket-price-breakdown">{fmtPrice(d.price)} package + {fmtPrice(d.flight_price)} flight</div>}
-            {includeFlightCosts && !hasFlight && <div className="ticket-price-breakdown">Flight price unavailable</div>}
+            {includeFlightCosts && !hasFlight && <div className="ticket-price-breakdown">{flightUnavailableCopy}</div>}
           </div>
           <div className="ticket-seat-block">
             <div className={`ticket-seats ticket-seats-${seatsTier}`}>{soldOut ? "Sold out" : `${d.seats_left} seat${d.seats_left === 1 ? "" : "s"} left`}</div>
@@ -161,7 +191,7 @@ export default function TicketWeekListing({ d, includeFlightCosts = false, favor
           }}>
           {includeFlightCosts && (
             <div className="ticket-flight-summary">
-              {hasFlight ? <>{IconPlane}<span>{compactFlightLine}</span></> : <span>Flight price unavailable</span>}
+              {hasFlight ? <>{IconPlane}<span>{compactFlightLine}</span></> : <span>{flightUnavailableCopy}</span>}
             </div>
           )}
           <div className="ticket-links">

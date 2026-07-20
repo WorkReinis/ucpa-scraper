@@ -4,8 +4,9 @@ import FilterPanel from "./components/FilterPanel";
 import ActiveFilters from "./components/ActiveFilters";
 import WeekListing from "./components/WeekListing";
 import TicketWeekListing from "./components/TicketWeekListing";
+import ChangelogPanel from "./components/ChangelogPanel";
 import useFavorites from "./useFavorites";
-import { filterFavoriteWeeks, sortCatalogForDisplay } from "./staticCatalog";
+import { filterFavoriteWeeks, resolveFlightQuote, sortCatalogForDisplay } from "./staticCatalog";
 import { IconLayoutCompact, IconLayoutDetailed, IconPlane, IconSearch, IconTicket } from "./icons";
 import "./App.css";
 
@@ -75,6 +76,11 @@ const DEFAULT_FILTERS = {
   maxPrice: "",
   month: [],
   sort: "price_asc",
+  // Flight-quote selection, not data filters: every row carries all
+  // (origin x arrival mode) quotes, so these never trigger a re-fetch --
+  // deliberately excluded from dataFilterKey below.
+  originGroup: "nl",
+  earlyArrival: false,
 };
 
 const SORTS = [
@@ -100,6 +106,7 @@ function hasActiveFilters(filters, favOnly) {
     filters.ageGroup.length > 0 ||
     Boolean(filters.minPrice) ||
     Boolean(filters.maxPrice) ||
+    filters.earlyArrival ||
     favOnly
   );
 }
@@ -116,6 +123,7 @@ export default function App() {
   const [cardView, setCardView] = useState("ticket");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [showChangelog, setShowChangelog] = useState(false);
   const requestId = useRef(0);
 
   useEffect(() => {
@@ -163,11 +171,14 @@ export default function App() {
   }, [filters, favOnly]);
 
   function handleClearAll() {
-    setFilters(DEFAULT_FILTERS);
+    // Where you fly from is a viewing preference, not a filter -- clearing
+    // filters shouldn't teleport the user back to the default origin.
+    setFilters({ ...DEFAULT_FILTERS, originGroup: filters.originGroup });
     setFavOnly(false);
   }
 
-  const sortedWeeks = sortCatalogForDisplay(weeks, filters.sort, includeFlightCosts);
+  const resolvedWeeks = weeks.map((row) => resolveFlightQuote(row, filters.originGroup, filters.earlyArrival));
+  const sortedWeeks = sortCatalogForDisplay(resolvedWeeks, filters.sort, includeFlightCosts);
   const favFilteredWeeks = filterFavoriteWeeks(sortedWeeks, favorites, favOnly);
   const displayedWeeks = favFilteredWeeks.slice(0, visibleWeeks);
   const remainingWeeks = Math.max(favFilteredWeeks.length - displayedWeeks.length, 0);
@@ -200,6 +211,18 @@ export default function App() {
               <span className="brand-tagline">Ski packages and flights, in one view</span>
             </div>
           </div>
+          <button type="button" className="changelog-nav-button" onClick={() => setShowChangelog(true)}>
+            <span className="changelog-nav-icon" aria-hidden="true">
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+                <path d="M8 2.25a5.75 5.75 0 1 1-5.3 3.52" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                <path d="M2.2 2.5v3.7h3.7M8 4.8v3.45l2.25 1.35" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </span>
+            <span>What&apos;s new</span>
+            {(meta?.changelog?.[0]?.summary.total ?? 0) > 0 && (
+              <span className="changelog-nav-badge">{meta.changelog[0].summary.total}</span>
+            )}
+          </button>
         </div>
       </header>
 
@@ -305,6 +328,7 @@ export default function App() {
               const sharedProps = {
                 d,
                 includeFlightCosts,
+                earlyArrival: filters.earlyArrival,
                 favorited: favorites.includes(weekKey(d)),
                 onToggleFavorite: () => toggleFavorite(weekKey(d)),
               };
@@ -357,7 +381,7 @@ export default function App() {
             <div className="footer-brand-copy">
               <strong>Your next mountain week, made simpler.</strong>
               <span>
-                Independent planner · Data from <a href="https://www.ucpa.com/" target="_blank" rel="noreferrer">UCPA</a> · Flights via SerpApi
+                Independent planner · Data from <a href="https://www.ucpa.com/" target="_blank" rel="noreferrer">UCPA</a> · Flights via Google Flights
               </span>
               <span className="footer-brand-attribution">
                 Independent project by Reinis <i aria-hidden="true">·</i> Data from <a href="https://www.ucpa.com/" target="_blank" rel="noreferrer">UCPA</a> and flight partners <i aria-hidden="true">·</i> Figures by <a href="https://fontawesome.com/" target="_blank" rel="noreferrer">Font Awesome</a>
@@ -366,6 +390,12 @@ export default function App() {
           </div>
         </div>
       </footer>
+
+      <ChangelogPanel
+        open={showChangelog}
+        onClose={() => setShowChangelog(false)}
+        days={meta?.changelog ?? []}
+      />
 
     </div>
   );

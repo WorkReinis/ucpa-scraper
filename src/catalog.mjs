@@ -2,13 +2,54 @@ import { translate, translateList } from "./translate.mjs";
 import { tierOf, tierRank } from "./levels.mjs";
 import { groupsOf, groupsPresent } from "./activities.mjs";
 import { findUnknownCategories } from "./categories.mjs";
-import { FLIGHT_REFRESH_DAYS } from "./flights.mjs";
-import { gatewayCaseSql } from "./airports.mjs";
+import { FLIGHT_REFRESH_DAYS, MONTHLY_SEARCH_LIMIT, ARRIVAL_MODES } from "./flights.mjs";
+import { gatewayCaseSql, ORIGIN_GROUPS } from "./airports.mjs";
+import { MONTHLY_RUN_LIMIT_APIFY } from "./providers/index.mjs";
+
+// One LEFT JOIN per (origin group x arrival mode) cell; every row carries
+// all six quotes nested under flight_quotes, and picking one is a pure
+// client-side concern -- the same code path serves the live API and the
+// static GitHub Pages export, so toggling origin or early-arrival in the
+// UI never needs a re-fetch.
+const FLIGHT_QUOTE_FIELDS = [
+  "price", "price_outbound", "price_return", "pricing_mode",
+  "dep_airport", "arr_airport", "gateway", "airline", "stops",
+  "duration_min", "fetched_at", "outbound_segments",
+  "return_dep_airport", "return_arr_airport", "return_airline",
+  "return_stops", "return_duration_min", "return_segments",
+  "details_scope", "outbound_date", "return_date",
+];
+const FLIGHT_JOINS = ORIGIN_GROUPS.flatMap((og) => ARRIVAL_MODES.map((mode) => ({
+  alias: `fp_${og.id}_${mode.id}`,
+  originGroup: og.id,
+  mode: mode.id,
+  dateExpr: mode.offsetDays === 0
+    ? "wl.start_date"
+    : `date(wl.start_date, '${mode.offsetDays} day')`,
+})));
+
+function pickFlightQuote(row, alias) {
+  // No fetched_at means the LEFT JOIN found nothing -- the cell was never
+  // quoted. A quote with null price is different: searched, but nothing
+  // inside the shuttle-viability windows. The UI words those separately.
+  if (row[`${alias}_fetched_at`] == null) return null;
+  const quote = {};
+  for (const field of FLIGHT_QUOTE_FIELDS) quote[field] = row[`${alias}_${field}`];
+  quote.outbound_segments = JSON.parse(quote.outbound_segments || "[]");
+  quote.return_segments = JSON.parse(quote.return_segments || "[]");
+  return quote;
+}
 
 function translateListing(row) {
+  const flight_quotes = {};
+  const clean = { ...row };
+  for (const { alias, originGroup, mode } of FLIGHT_JOINS) {
+    (flight_quotes[originGroup] ??= {})[mode] = pickFlightQuote(row, alias);
+    for (const field of FLIGHT_QUOTE_FIELDS) delete clean[`${alias}_${field}`];
+  }
   return {
-    ...row,
-    flight_outbound_segments: JSON.parse(row.flight_outbound_segments || "[]"),
+    ...clean,
+    flight_quotes,
     activity_groups: groupsOf(row.activity),
     tier: tierOf(row.level),
     title: translate(row.title),
@@ -29,6 +70,116 @@ const SORTS = {
   soonest: "wl.start_date ASC",
 };
 
+export function getChangelogData(db, { limitDays = 7 } = {}) {
+  const scrapeDays = db.prepare(
+    `SELECT date(started_at) AS day, MAX(started_at) AS scraped_at,
+            MAX(n_products) AS product_count
+     FROM run
+     GROUP BY date(started_at)
+     ORDER BY day DESC
+     LIMIT ?`
+  ).all(limitDays);
+  if (!scrapeDays.length) return [];
+
+  const oldestDay = db.prepare("SELECT MIN(date(started_at)) AS day FROM run").get().day;
+  const wantedDays = new Set(scrapeDays.map((row) => row.day));
+  const snapshots = db.prepare(`
+    WITH ranked AS (
+      SELECT w.*,
+             date(w.observed_at) AS scrape_day,
+             ROW_NUMBER() OVER (
+               PARTITION BY w.code, w.start_date, date(w.observed_at)
+               ORDER BY w.observed_at DESC
+             ) AS day_rank
+      FROM week w
+    ),
+    daily AS (
+      SELECT * FROM ranked WHERE day_rank = 1
+    ),
+    compared AS (
+      SELECT d.*,
+             LAG(d.price) OVER (
+               PARTITION BY d.code, d.start_date ORDER BY d.scrape_day
+             ) AS previous_price,
+             LAG(d.seats_left) OVER (
+               PARTITION BY d.code, d.start_date ORDER BY d.scrape_day
+             ) AS previous_seats,
+             ROW_NUMBER() OVER (
+               PARTITION BY d.code, d.start_date ORDER BY d.scrape_day
+             ) AS observation_day
+      FROM daily d
+    )
+    SELECT c.*, p.title, p.resort
+    FROM compared c
+    JOIN product p ON p.code = c.code
+    ORDER BY c.scrape_day DESC, p.title, c.start_date
+  `).all();
+
+  const byDay = new Map(scrapeDays.map((row) => [row.day, {
+    day: row.day,
+    scrapedAt: row.scraped_at,
+    productCount: row.product_count,
+    summary: { newListings: 0, priceChanges: 0, availabilityChanges: 0, total: 0 },
+    events: [],
+  }]));
+
+  for (const row of snapshots) {
+    if (!wantedDays.has(row.scrape_day) || row.scrape_day === oldestDay) continue;
+    const firstSeen = row.observation_day === 1;
+    // Ignore small movements in the public changelog. Besides being noisy,
+    // sub-€10 deltas include legacy fractional prices being normalized to
+    // whole euros; a €1505.50 -> €1506 import must not render as €1506 ->
+    // €1506. Seat changes on the same listing are still reported.
+    const priceChanged = !firstSeen && row.price != null && row.previous_price != null &&
+      Math.abs(row.price - row.previous_price) >= 10;
+    const soldOut = !firstSeen && row.seats_left === 0 && row.previous_seats > 0;
+    const restocked = !firstSeen && row.seats_left > 0 && row.previous_seats === 0;
+    // Raw UCPA inventory moves constantly and overwhelms the useful changes.
+    // Only availability state transitions belong in the changelog.
+    const seatsChanged = soldOut || restocked;
+    if (!firstSeen && !priceChanged && !seatsChanged) continue;
+
+    const day = byDay.get(row.scrape_day);
+    const kind = firstSeen
+      ? "new"
+      : soldOut
+        ? "sold_out"
+        : restocked
+          ? "restocked"
+          : priceChanged
+            ? "price"
+            : "availability";
+    day.events.push({
+      kind,
+      code: row.code,
+      title: translate(row.title),
+      resort: row.resort,
+      startDate: row.start_date,
+      endDate: row.end_date,
+      price: row.price == null ? null : Math.ceil(row.price),
+      previousPrice: row.previous_price == null ? null : Math.ceil(row.previous_price),
+      seats: row.seats_left,
+      previousSeats: row.previous_seats,
+      priceChanged,
+      seatsChanged,
+    });
+    if (firstSeen) day.summary.newListings++;
+    if (priceChanged) day.summary.priceChanges++;
+    if (seatsChanged) day.summary.availabilityChanges++;
+    day.summary.total++;
+  }
+
+  const priority = { new: 0, sold_out: 1, restocked: 2, price: 3, availability: 4 };
+  for (const day of byDay.values()) {
+    day.events.sort((a, b) =>
+      (priority[a.kind] - priority[b.kind]) ||
+      a.startDate.localeCompare(b.startDate) ||
+      a.title.localeCompare(b.title)
+    );
+  }
+  return [...byDay.values()];
+}
+
 export function getFiltersData(db, { flightsConfigured = false } = {}) {
   const resortsByRegion = {};
   for (const r of db.prepare("SELECT DISTINCT resort, region FROM product WHERE resort IS NOT NULL ORDER BY resort").all()) {
@@ -47,9 +198,13 @@ export function getFiltersData(db, { flightsConfigured = false } = {}) {
     return counts;
   };
 
-  const attemptedThisMonth = db.prepare(
-    "SELECT COUNT(*) n FROM flight_search WHERE billing_month = strftime('%Y-%m', 'now')"
-  ).get().n;
+  const attemptedThisMonth = (provider) => db.prepare(
+    "SELECT COUNT(*) n FROM flight_search WHERE billing_month = strftime('%Y-%m', 'now') AND provider = ?"
+  ).get(provider).n;
+  const quotaFor = (provider, limit) => {
+    const used = attemptedThisMonth(provider);
+    return { limit, used, remaining: Math.max(limit - used, 0) };
+  };
   const priceRangeRow = db.prepare(
     "SELECT MIN(price) min, MAX(price) max FROM v_week_current WHERE seats_left > 0"
   ).get();
@@ -83,11 +238,12 @@ export function getFiltersData(db, { flightsConfigured = false } = {}) {
       catalogueDays: 1,
       flightDays: FLIGHT_REFRESH_DAYS,
     },
+    originGroups: ORIGIN_GROUPS.map(({ id, label, airports }) => ({ id, label, airports })),
     flightQuota: {
-      limit: 225,
-      used: attemptedThisMonth,
-      remaining: Math.max(225 - attemptedThisMonth, 0),
+      apify: quotaFor("apify", MONTHLY_RUN_LIMIT_APIFY),
+      serpapi: quotaFor("serpapi", MONTHLY_SEARCH_LIMIT),
     },
+    changelog: getChangelogData(db),
     unknownCategories: findUnknownCategories(db),
   };
 }
@@ -139,22 +295,25 @@ export function getWeeksData(db, q = {}) {
   }
 
   const orderBy = SORTS[q.sort] ?? SORTS.price_asc;
+  // alias/originGroup/mode are build-time constants from airports.mjs and
+  // flights.mjs, never user input -- inlining them is the same deal as
+  // gatewayCaseSql's inlined resort names.
+  const flightSelects = FLIGHT_JOINS.map(({ alias }) =>
+    FLIGHT_QUOTE_FIELDS.map((field) => `${alias}.${field} AS ${alias}_${field}`).join(", ")
+  ).join(",\n           ");
+  const flightJoins = FLIGHT_JOINS.map(({ alias, originGroup, dateExpr }) => `
+    LEFT JOIN v_flight_current ${alias}
+      ON ${alias}.outbound_date = ${dateExpr} AND ${alias}.return_date = wl.end_date
+      AND ${alias}.gateway = ${gatewayCaseSql("wl.resort")}
+      AND ${alias}.origin_group = '${originGroup}'`
+  ).join("");
   const sql = `
     SELECT wl.*, wd.price_prev, wd.delta_eur, wd.seats_prev, wd.seats_delta,
            CASE WHEN wn.code IS NOT NULL THEN 1 ELSE 0 END AS is_new,
-           fp.price AS flight_price, fp.dep_airport AS flight_dep, fp.arr_airport AS flight_arr,
-           fp.gateway AS flight_gateway,
-           fp.airline AS flight_airline, fp.stops AS flight_stops,
-           fp.duration_min AS flight_duration_min, fp.fetched_at AS flight_fetched_at,
-           fp.outbound_segments AS flight_outbound_segments,
-           fp.details_scope AS flight_details_scope,
-           fp.outbound_date AS flight_depart_date, fp.return_date AS flight_return_date
+           ${flightSelects}
     FROM v_week_listing wl
     LEFT JOIN v_week_delta wd ON wd.code = wl.code AND wd.start_date = wl.start_date
-    LEFT JOIN v_week_new wn ON wn.code = wl.code AND wn.start_date = wl.start_date
-    LEFT JOIN v_flight_current fp
-      ON fp.outbound_date = date(wl.start_date, '-1 day') AND fp.return_date = wl.end_date
-      AND fp.gateway = ${gatewayCaseSql("wl.resort")}
+    LEFT JOIN v_week_new wn ON wn.code = wl.code AND wn.start_date = wl.start_date${flightJoins}
     WHERE ${where.join(" AND ")}
     ORDER BY (wl.seats_left <= 0) ASC, ${orderBy}`;
   return db.prepare(sql).all(...params).map(translateListing);

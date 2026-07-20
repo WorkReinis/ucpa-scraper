@@ -79,8 +79,8 @@ One-time setup after creating a public GitHub repository:
 1. Push the application to the repository's `main` branch.
 2. Run `npm run data:init` locally to seed the rolling `data` branch from the
    current `ucpa.db` history.
-3. Add `SERPAPI_KEY` under repository **Settings > Secrets and variables >
-   Actions**.
+3. Add `APIFY_KEY_1` (and optionally `APIFY_KEY_2..4` plus the `SERPAPI_KEY`
+   fallback) under repository **Settings > Secrets and variables > Actions**.
 4. Under **Settings > Pages**, choose **GitHub Actions** as the source and run
    the **Deploy GitHub Pages** workflow once.
 
@@ -89,7 +89,10 @@ refreshed on every scheduled run; flight requests are made only when the last
 quote for a date pair is six calendar days old. Its manual menu supports
 catalogue-only, flight-only, both, and a non-publishing dry run. A failed scrape or build never
 replaces the last deployed site or the rolling database. Successful databases
-are also retained as workflow artifacts for 14 days.
+are also retained as workflow artifacts for 14 days. Flight refreshes have a
+three-hour job allowance; partial provider runs do not block a fresh catalogue
+deployment, but are explicitly marked partial with completed/missing cell
+counts in the Actions summary.
 
 ### Import safety
 
@@ -103,7 +106,9 @@ Hosted catalogue refreshes validate all remote data before writing anything:
 - anomalous public HTML/JSON and a scrape summary are retained as private workflow artifacts for 14 days;
 - validated catalogue, week, detail, and source-count rows commit in one SQLite transaction.
 
-SerpApi responses are schema-checked too. Every outbound segment and carrier is retained. Carrier data is explicitly labelled outbound-only because resolving the return selection requires another billable search; the app does not present the first response as if it described both directions.
+Flight-provider responses (Apify actor or SerpApi) are schema-checked too.
+Outbound and return are searched independently, and every segment and carrier
+from both selected one-way itineraries is retained.
 
 For a local preview of the exact hosted data path:
 
@@ -116,27 +121,59 @@ $env:VITE_STATIC_DATA="1"; npm run build --prefix web
 ### Flight prices
 
 Ticket prices combine the UCPA package with the cheapest round-trip flight
-from Amsterdam/Rotterdam to Lyon/Geneva/Zurich/Turin/Toulouse, flying out the
-day before the package starts. Quotes come from Google Flights through
-[SerpApi](https://serpapi.com).
+for the origin selected in the UI — Netherlands (AMS/RTM), London
+(LHR/LGW/LTN/STN/LCY), or Basel (BSL) — to the resort's validated gateway
+airports. By default the flight lands on the package's own start date
+(Sunday check-in); the "Arrive a day early" toggle switches every card to a
+Saturday flight for UCPA's paid early-arrival service, which also means a
+whole extra riding day. Both variants of all three origins are quoted on
+every refresh, so toggling in the UI is instant and never re-fetches.
 
-Put the key in `.env` at the repo root (gitignored; Node loads it natively
-via `--env-file-if-exists`, no dotenv package — needs Node ≥ 22.9):
+Quotes come from Google Flights through an Apify actor (primary; ~$0.03 per
+search, keys rotate across every `APIFY_KEY_*` by remaining free credit)
+with [SerpApi](https://serpapi.com) as automatic fallback. Put keys in
+`.env` at the repo root (gitignored; Node loads it natively via
+`--env-file-if-exists`, no dotenv package — needs Node ≥ 22.9):
 
 ```
-SERPAPI_KEY=your-key-here
+APIFY_KEY_1=your-apify-token
+APIFY_KEY_2=...            # optional extra accounts
+SERPAPI_KEY=your-key-here  # optional fallback
 ```
+
+`FLIGHT_PROVIDER=apify|serpapi` forces one provider — the rollback lever if
+the actor breaks. `npm run apify:screen` shows per-account credit without
+spending any.
 
 Run `npm run flights` locally for a manual refresh. Hosted refreshes run from
 the scheduled workflow; there are no public scrape or flight buttons.
 
-One search prices the whole airport cross-product (2 origins × 5
-destinations) for one (start, end) date pair at once, and every product
-sharing that week shares the quote.
+Each arrival mode uses a genuine round-trip search, whose total is the
+authoritative card price. A shared return one-way search supplies a
+shuttle-compatible return schedule without contributing its one-way price.
+Those schedules have their own 14-day cache, so a cold full season is about
+105 base searches while normal fare-only cycles are about 70. Each date pair
+queries only airports serving packages on those dates. If Google omits one
+origin x resort-gateway cell, one narrow retry searches exactly that cell
+before the result is accepted. Responses are partitioned into per-(origin,
+gateway) cheapest quotes, and every product sharing that week shares them. A future
+mixed-carrier, separately booked strategy may sum two one-ways, but it must be
+stored and labelled as `separate`; it is never substituted for a round-trip
+fare implicitly.
+
+Flights are only counted when the resort shuttle is catchable: transfer
+durations per (gateway, airport) map through shared bands
+(`src/airports.mjs` `TRANSFER_BANDS`) to a latest viable landing time
+(21:00 for ≤1.5 h transfers down to an 18:30 floor) and an earliest viable
+return departure (10:00 up to 12:30). Editing a duration or the band policy
+re-quotes automatically on the next refresh.
+
 Quotes are append-only in `flight_price` (price history for free, like
-everything else here). A quote stays fresh for six calendar days. The ledger
-permits two attempts per date pair in that rolling window and enforces a hard
-ceiling of 225 SerpApi requests per calendar month.
+everything else here); shared return schedules live in
+`flight_return_schedule`. A quote stays fresh for six calendar days and a
+return schedule for 14. The ledger
+permits two attempts per date pair in that rolling window and enforces a
+monthly ceiling per provider (450 Apify runs, 225 SerpApi searches).
 Without a current quote, the ticket keeps its package price and links to a
 manual Google Flights search.
 

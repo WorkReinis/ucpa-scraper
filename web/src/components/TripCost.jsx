@@ -45,7 +45,7 @@ function FlightLine({ d }) {
       {IconPlane} Fly out {fmtDate(d.flight_depart_date)} · {d.flight_dep} → {d.flight_arr} · {d.flight_airline} outbound
       {d.flight_stops != null && <> · {d.flight_stops === 0 ? "direct" : `${d.flight_stops} stop${d.flight_stops === 1 ? "" : "s"}`}</>}
       {d.flight_duration_min != null && <> · {fmtMinutes(d.flight_duration_min)}</>}
-      {" "}· round trip {fmtPrice(d.flight_price)} · quoted {fmtAgo(d.flight_fetched_at)}
+      {" "}· {d.flight_pricing_mode === "separate" ? "separate tickets" : "round trip"} {fmtPrice(d.flight_price)} · quoted {fmtAgo(d.flight_fetched_at)}
     </div>
   );
 }
@@ -57,7 +57,7 @@ export default function TripCost({ weeks, meta }) {
   return (
     <>
       <div className="results-toolbar"><div className="muted small">{rows.length} trips priced</div></div>
-      {!configured && <p className="flight-banner">Flight quotes need a SerpApi key (free, 250 searches/month at serpapi.com). Set <code>SERPAPI_KEY</code> in the server&apos;s environment and restart it.</p>}
+      {!configured && <p className="flight-banner">Flight quotes need a provider key. Set <code>APIFY_KEY_1</code> (apify.com) or <code>SERPAPI_KEY</code> (serpapi.com) in the server&apos;s environment and restart it.</p>}
       {rows.length === 0 && <p className="muted">No weeks match these filters.</p>}
 
       {rows.map((d) => (

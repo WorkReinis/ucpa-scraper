@@ -36,6 +36,19 @@ export default function ActiveFilters({ filters, onChange, favOnly, onFavOnlyCha
     });
   }
 
+  // The origin selector gets no chip on purpose: it's a viewing preference
+  // that's permanently visible in the sidebar, not a filter that narrows
+  // results. The early-arrival service does show one, since it changes what
+  // every price means.
+  if (filters.earlyArrival) {
+    chips.push({
+      id: "early-arrival",
+      group: "Flights",
+      label: "Arrive a day early",
+      remove: () => onChange({ ...filters, earlyArrival: false }),
+    });
+  }
+
   if (favOnly) {
     chips.push({ id: "favorites", group: "View", label: "Favorites", remove: () => onFavOnlyChange(false) });
   }

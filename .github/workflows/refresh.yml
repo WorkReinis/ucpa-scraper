@@ -29,13 +29,19 @@ concurrency:
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # A cold flight refresh is ~105 actor runs; the 14-day return cache reduces
+    # normal fare-only cycles to ~70 before any exact-cell recovery searches.
+    timeout-minutes: 180
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     env:
       OPERATION: ${{ github.event_name == 'schedule' && 'both' || inputs.operation }}
       SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
+      APIFY_KEY_1: ${{ secrets.APIFY_KEY_1 }}
+      APIFY_KEY_2: ${{ secrets.APIFY_KEY_2 }}
+      APIFY_KEY_3: ${{ secrets.APIFY_KEY_3 }}
+      APIFY_KEY_4: ${{ secrets.APIFY_KEY_4 }}
       SCRAPE_DIAGNOSTICS_DIR: .scrape-diagnostics
     steps:
       - uses: actions/checkout@v7
@@ -79,13 +85,25 @@ jobs:
         continue-on-error: true
         shell: bash
         run: |
-          if test -z "$SERPAPI_KEY"; then
-            echo "::warning title=Flights skipped::SERPAPI_KEY is not configured in repository Actions secrets. Catalogue data will still be refreshed."
-            echo "status=skipped (SERPAPI_KEY missing)" >> "$GITHUB_OUTPUT"
+          if test -z "$APIFY_KEY_1$APIFY_KEY_2$APIFY_KEY_3$APIFY_KEY_4$SERPAPI_KEY"; then
+            echo "::warning title=Flights skipped::No flight provider configured (APIFY_KEY_1..4 or SERPAPI_KEY) in repository Actions secrets. Catalogue data will still be refreshed."
+            echo "status=skipped (no provider configured)" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          set +e
           npm run flights
-          echo "status=success" >> "$GITHUB_OUTPUT"
+          flight_exit=$?
+          set -e
+          if test -f .flight-summary.json; then
+            flight_status="$(jq -r '.status // "failed"' .flight-summary.json)"
+            echo "status=$flight_status" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=failed (no flight summary produced)" >> "$GITHUB_OUTPUT"
+          fi
+          if test "$flight_exit" -ne 0; then
+            echo "::warning title=Flight refresh incomplete::The catalogue will still deploy, but existing flight quotes remain in use for missing cells."
+          fi
+          exit "$flight_exit"
 
       - name: Stop after dry run
         if: env.OPERATION == 'dry-run'
@@ -145,6 +163,7 @@ jobs:
           path: |
             .scrape-diagnostics/
             .scrape-summary.json
+            .flight-summary.json
           retention-days: 14
           if-no-files-found: ignore
 
@@ -169,7 +188,10 @@ jobs:
             jq -r '"- Catalogue: \(if .error then "failed - " + .error else "passed" end)\n- Products: \(.products // 0)\n- Source failures: \(.sourceFailures // [] | length)\n- Detail warnings: \(.detailFailures // [] | length)"' .scrape-summary.json >> "$GITHUB_STEP_SUMMARY"
           fi
           if test -f .refresh-summary.json; then
-            jq -r '"- Listings: \(.listings)\n- Last scrape: \(.lastScrapedAt)\n- Last flight check: \(.lastFlightsRefreshAt)\n- Flight quota: \(.flightQuota.used)/\(.flightQuota.limit)\n- Unknown category groups: \(.unknownCategoryGroups)"' .refresh-summary.json >> "$GITHUB_STEP_SUMMARY"
+            jq -r '"- Listings: \(.listings)\n- Last scrape: \(.lastScrapedAt)\n- Last flight check: \(.lastFlightsRefreshAt)\n- Flight quota: apify \(.flightQuota.apify.used)/\(.flightQuota.apify.limit), serpapi \(.flightQuota.serpapi.used)/\(.flightQuota.serpapi.limit)\n- Unknown category groups: \(.unknownCategoryGroups)"' .refresh-summary.json >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if test -f .flight-summary.json; then
+            jq -r '"- Flight refresh: \(.status // "failed")\n- Flight modes: \(.modesCompleted // 0)/\(.modesDue // 0) completed\n- Flight cells: \(.cellsStored // 0)/\(.cellsDue // 0) stored (\(.cellsUnpriced // 0) searched with no viable price, \(.unresolvedCells // 0) unresolved)\n- Provider searches: \(.searched // 0) total, \(.broadSearches // 0) broad, \(.targetedRetries // 0) targeted retries\n- Return cache: \(.returnCacheHits // 0) date-pair hits, \(.returnCellsReused // 0) cells reused\n- Failures: \(.failed // 0)"' .flight-summary.json >> "$GITHUB_STEP_SUMMARY"
           fi
           echo "- Flight step: ${{ steps.flights.outputs.status || steps.flights.outcome }}" >> "$GITHUB_STEP_SUMMARY"
           if test -n "${{ steps.deployment.outputs.page_url }}"; then echo "- Site: ${{ steps.deployment.outputs.page_url }}" >> "$GITHUB_STEP_SUMMARY"; fi

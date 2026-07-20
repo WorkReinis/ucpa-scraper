@@ -20,6 +20,44 @@ export function filterFavoriteWeeks(rows, favorites, enabled) {
   return rows.filter((row) => wanted.has(`${row.code}-${row.start_date}`));
 }
 
+/** The flight_quotes cell for an origin group + arrival mode. Null when that
+ *  combination hasn't been quoted (or found nothing). */
+export function selectFlightQuote(row, originGroup = "nl", earlyArrival = false) {
+  return row.flight_quotes?.[originGroup]?.[earlyArrival ? "early" : "standard"] ?? null;
+}
+
+/** Flatten the selected quote back onto the row as the flight_* fields the
+ *  card components read. Selection is pure client-side -- every row already
+ *  carries all (origin x arrival mode) quotes nested in flight_quotes, so
+ *  toggling origin or early-arrival never re-fetches. */
+export function resolveFlightQuote(row, originGroup = "nl", earlyArrival = false) {
+  const quote = selectFlightQuote(row, originGroup, earlyArrival);
+  return {
+    ...row,
+    flight_price: quote?.price ?? null,
+    flight_price_outbound: quote?.price_outbound ?? null,
+    flight_price_return: quote?.price_return ?? null,
+    flight_pricing_mode: quote?.pricing_mode ?? null,
+    flight_dep: quote?.dep_airport ?? null,
+    flight_arr: quote?.arr_airport ?? null,
+    flight_gateway: quote?.gateway ?? null,
+    flight_airline: quote?.airline ?? null,
+    flight_stops: quote?.stops ?? null,
+    flight_duration_min: quote?.duration_min ?? null,
+    flight_fetched_at: quote?.fetched_at ?? null,
+    flight_outbound_segments: quote?.outbound_segments ?? [],
+    flight_return_dep: quote?.return_dep_airport ?? null,
+    flight_return_arr: quote?.return_arr_airport ?? null,
+    flight_return_airline: quote?.return_airline ?? null,
+    flight_return_stops: quote?.return_stops ?? null,
+    flight_return_duration_min: quote?.return_duration_min ?? null,
+    flight_return_segments: quote?.return_segments ?? [],
+    flight_details_scope: quote?.details_scope ?? null,
+    flight_depart_date: quote?.outbound_date ?? null,
+    flight_return_date: quote?.return_date ?? null,
+  };
+}
+
 function totalPrice(row) {
   return row.price + (Number.isFinite(row.flight_price) ? row.flight_price : 0);
 }

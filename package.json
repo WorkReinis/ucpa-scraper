@@ -8,6 +8,7 @@
     "scrape": "node src/scrape.mjs",
     "dry": "node src/scrape.mjs --dry",
     "flights": "node --env-file-if-exists=.env src/flights.mjs",
+    "apify:screen": "node --env-file-if-exists=.env src/apify-screen.mjs",
     "export:static": "node src/export-static.mjs",
     "verify:static": "node src/verify-static.mjs",
     "validate:airports": "node src/validate-airports.mjs",

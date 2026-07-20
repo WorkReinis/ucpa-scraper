@@ -9,6 +9,7 @@ import { open } from "./db.mjs";
 import { runScrape } from "./scrape.mjs";
 import { runFlightRefresh } from "./flights.mjs";
 import { getFiltersData, getWeeksData } from "./catalog.mjs";
+import { configuredProviders } from "./providers/index.mjs";
 
 // Reads ucpa.db directly on every request -- there's no caching layer because
 // there's no need for one: a few hundred rows, one scrape a day.
@@ -26,7 +27,7 @@ export function createApiApp() {
   // grouping itself -- built from what's actually in the DB, not a hardcoded
   // list that drifts as UCPA adds/removes products.
   app.get("/api/filters", (req, res) => {
-    res.json(getFiltersData(db, { flightsConfigured: Boolean(process.env.SERPAPI_KEY) }));
+    res.json(getFiltersData(db, { flightsConfigured: configuredProviders().length > 0 }));
   });
 
   // The primary listing: one row per (product, specific week), not grouped by

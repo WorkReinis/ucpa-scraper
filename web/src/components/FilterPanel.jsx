@@ -60,6 +60,26 @@ export default function FilterPanel({
     <aside className="filter-panel">
       <h2>Filters</h2>
 
+      {/* First control on purpose: where you fly from reprices every card,
+          so it's the decision users start with. */}
+      {meta.originGroups?.length > 0 && (
+        <div className="filter-group filter-group-fit-content">
+          <div className="filter-group-title filter-group-title-static">Flying from</div>
+          <div className="seg-control seg-control-block">
+            {meta.originGroups.map((group) => (
+              <button
+                key={group.id}
+                type="button"
+                className={`seg-button${value.originGroup === group.id ? " active" : ""}`}
+                onClick={() => set({ originGroup: group.id })}
+              >
+                {group.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <Collapsible label="Month" activeCount={value.month.length} fitContent>
         {meta.months.map((m) => (
           <Checkbox key={m} checked={value.month.includes(m)} onChange={() => toggleIn("month", m)}>
@@ -139,6 +159,12 @@ export default function FilterPanel({
         {showFlightToggle && <Toggle checked={includeFlightCosts} onChange={onIncludeFlightCostsChange}>
           Include flight costs
         </Toggle>}
+        {/* UCPA's paid Saturday-arrival service: fly out the day before the
+            package starts and ride the whole first Sunday. Swaps every card
+            to the day-early flight quote. */}
+        <Toggle checked={value.earlyArrival} onChange={(checked) => set({ earlyArrival: checked })}>
+          Arrive a day early
+        </Toggle>
         <Toggle checked={favOnly} onChange={onFavOnlyChange}>
           Favorites{favCount > 0 && <span className="switch-count">{favCount}</span>}
         </Toggle>

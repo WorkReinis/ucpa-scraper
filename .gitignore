@@ -8,6 +8,7 @@ scrape.log
 web/dist/
 web/public/data/
 .refresh-summary.json
+.flight-summary.json
 .scrape-summary.json
 .claude/
 ucpa.db.bak-*

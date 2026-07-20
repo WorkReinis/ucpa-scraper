@@ -49,6 +49,49 @@ export function detailIssues(details) {
   return issues;
 }
 
+/** Shape check for one nested flight_quotes cell. A null cell has never been
+ * quoted. A present cell with price null is also valid: the provider search
+ * completed but no viable round-trip fare or return schedule was available. */
+export function flightQuoteIssues(quote) {
+  if (quote == null) return [];
+  const issues = [];
+  const pricingMode = quote.pricing_mode ?? "legacy";
+  if (!["legacy", "roundtrip", "separate"].includes(pricingMode)) {
+    issues.push(`invalid flight pricing mode: ${pricingMode}`);
+  }
+  const airportFields = [
+    ["departure", quote.dep_airport],
+    ["arrival", quote.arr_airport],
+    ["return departure", quote.return_dep_airport],
+    ["return arrival", quote.return_arr_airport],
+  ];
+  if (quote.price == null) {
+    for (const [label, value] of airportFields) {
+      if (value != null && !/^[A-Z]{3}$/.test(value)) issues.push(`invalid ${label} airport: ${value}`);
+    }
+    return issues;
+  }
+  if (!Number.isInteger(quote.price) || quote.price <= 0) issues.push(`invalid flight price: ${quote.price}`);
+  if (pricingMode === "roundtrip" && (quote.price_outbound != null || quote.price_return != null)) {
+    issues.push("round-trip fare must not contain additive one-way price halves");
+  }
+  if (pricingMode === "separate") {
+    if (!Number.isInteger(quote.price_outbound) || !Number.isInteger(quote.price_return) ||
+        quote.price_outbound + quote.price_return !== quote.price) {
+      issues.push("separate-ticket fare must equal its two one-way prices");
+    }
+  }
+  for (const [label, value] of airportFields.slice(0, 2)) {
+    if (!/^[A-Z]{3}$/.test(value ?? "")) issues.push(`invalid ${label} airport: ${value}`);
+  }
+  if (quote.details_scope === "both") {
+    for (const [label, value] of airportFields.slice(2)) {
+      if (!/^[A-Z]{3}$/.test(value ?? "")) issues.push(`invalid ${label} airport: ${value}`);
+    }
+  }
+  return issues;
+}
+
 export function assertDetailFailureRate(failed, total) {
   const rate = total === 0 ? 1 : failed / total;
   if (rate > MAX_DETAIL_FAILURE_RATE) {

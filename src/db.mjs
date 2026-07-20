@@ -1,4 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
+import { AIRPORT_CONFIG_KEY } from "./airports.mjs";
+
+const SQL_AIRPORT_CONFIG_KEY = AIRPORT_CONFIG_KEY.replaceAll("'", "''");
 
 // ---------------------------------------------------------------------------
 // Schema design
@@ -106,24 +109,65 @@ CREATE TABLE IF NOT EXISTS watch (
 -- is inserted anyway so the freshness check treats the pair as covered
 -- instead of re-burning API quota on it every refresh.
 CREATE TABLE IF NOT EXISTS flight_price (
-  origins        TEXT NOT NULL,   -- query as sent, e.g. "AMS,RTM"
+  origins        TEXT NOT NULL,   -- airports valid for this origin group, e.g. "AMS,RTM"
   dests          TEXT NOT NULL,   -- airports valid for this resort gateway
   gateway        TEXT NOT NULL,   -- validated resort group from airports.mjs
-  outbound_date  TEXT NOT NULL,   -- = week.start_date
+  origin_group   TEXT NOT NULL DEFAULT 'nl',    -- departure group from airports.mjs ORIGIN_GROUPS
+  arrival_mode   TEXT NOT NULL DEFAULT 'early', -- 'standard' = fly on start_date, 'early' = start_date-1
+  provider       TEXT NOT NULL DEFAULT 'serpapi', -- which provider served this row
+  config_key     TEXT NOT NULL DEFAULT 'legacy', -- airport/search policy that produced this row
+  outbound_date  TEXT NOT NULL,   -- = week.start_date ('standard') or -1 day ('early')
   return_date    TEXT NOT NULL,   -- = week.end_date
   fetched_at     TEXT NOT NULL,
-  price          REAL,            -- cheapest round-trip total, EUR
+  price          REAL,            -- authoritative trip total, EUR
+  price_outbound REAL,            -- populated only for explicitly separate one-way bookings
+  price_return   REAL,
+  pricing_mode   TEXT NOT NULL DEFAULT 'legacy', -- roundtrip / separate / legacy
   dep_airport    TEXT,            -- the cheapest itinerary's actual airports
   arr_airport    TEXT,
   airline        TEXT,
   stops          INTEGER,         -- outbound leg; 0 = direct
   duration_min   INTEGER,         -- outbound leg, minutes
   outbound_segments TEXT,         -- JSON array; every outbound segment
-  details_scope  TEXT NOT NULL DEFAULT 'outbound',
+  return_dep_airport TEXT,        -- return leg, filled on 'both'-scope rows
+  return_arr_airport TEXT,
+  return_airline TEXT,
+  return_stops   INTEGER,
+  return_duration_min INTEGER,
+  return_segments TEXT,           -- JSON array; every return segment
+  details_scope  TEXT NOT NULL DEFAULT 'outbound', -- 'both' when both schedules are stored
   price_level    TEXT,            -- Google's own read: low / typical / high
   PRIMARY KEY (origins, dests, outbound_date, return_date, fetched_at)
 );
 CREATE INDEX IF NOT EXISTS idx_flight_dates ON flight_price(outbound_date, return_date);
+
+-- Return schedules are shared by the standard and early-arrival fare
+-- searches. Keep them independently so fare refreshes can reuse a recently
+-- validated shuttle-compatible return instead of spending one provider
+-- request per date pair every time. price is the one-way search result used
+-- only as an availability sentinel; it is never added to the package fare.
+CREATE TABLE IF NOT EXISTS flight_return_schedule (
+  origin_group   TEXT NOT NULL,
+  gateway        TEXT NOT NULL,
+  origins        TEXT NOT NULL,
+  dests          TEXT NOT NULL,
+  return_date    TEXT NOT NULL,
+  config_key     TEXT NOT NULL,
+  provider       TEXT NOT NULL,
+  fetched_at     TEXT NOT NULL,
+  price          REAL,
+  dep_airport    TEXT,
+  arr_airport    TEXT,
+  airline        TEXT,
+  stops          INTEGER,
+  duration_min   INTEGER,
+  segments       TEXT,
+  candidate_count INTEGER NOT NULL DEFAULT 0,
+  window_dropped  INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (origin_group, gateway, return_date, config_key, fetched_at)
+);
+CREATE INDEX IF NOT EXISTS idx_return_schedule_current
+  ON flight_return_schedule(return_date, config_key, origin_group, gateway, fetched_at);
 
 -- Every SerpApi request attempt, including failures. This is the quota source
 -- of truth: failed HTTP requests may still consume provider quota, so counting
@@ -136,6 +180,9 @@ CREATE TABLE IF NOT EXISTS flight_search (
   week_key       TEXT NOT NULL,
   billing_month  TEXT NOT NULL,
   config_key     TEXT NOT NULL,
+  arrival_mode   TEXT NOT NULL DEFAULT 'early',
+  provider       TEXT NOT NULL DEFAULT 'serpapi',
+  direction      TEXT NOT NULL DEFAULT 'roundtrip', -- 'outbound'/'return' one-ways since 2026-07
   status         TEXT NOT NULL,
   error          TEXT
 );
@@ -251,15 +298,35 @@ SELECT
 FROM v_week_current w
 JOIN product p ON p.code = w.code;
 
--- Latest flight quote per gateway and date pair. This prevents a cheap Lyon
--- itinerary from being attached to a Pyrenees package on the same dates.
+-- Preferred flight quote per (gateway, origin group) cell and date pair. A
+-- quote made by the current search policy always wins. While the new policy
+-- is still filling its coverage, retain only the trustworthy historical
+-- round-trip totals: legacy rows with no separately priced one-way halves.
+-- This deliberately rejects the later, incorrect outbound + return sums.
+-- New current-policy rows (including an authoritative no-result row) replace
+-- the fallback cell by cell as soon as they are fetched.
 CREATE VIEW v_flight_current AS
 SELECT f.*
 FROM flight_price f
-WHERE f.fetched_at = (
-  SELECT MAX(f2.fetched_at) FROM flight_price f2
+WHERE f.rowid = (
+  SELECT f2.rowid FROM flight_price f2
   WHERE f2.outbound_date = f.outbound_date AND f2.return_date = f.return_date
-    AND f2.gateway = f.gateway
+    AND f2.gateway = f.gateway AND f2.origin_group = f.origin_group
+    AND (
+      f2.config_key = '${SQL_AIRPORT_CONFIG_KEY}'
+      OR (
+        f2.config_key = 'legacy'
+        AND f2.details_scope = 'outbound'
+        AND f2.price IS NOT NULL
+        AND f2.price_outbound IS NULL
+        AND f2.price_return IS NULL
+      )
+    )
+  ORDER BY
+    CASE WHEN f2.config_key = '${SQL_AIRPORT_CONFIG_KEY}' THEN 0 ELSE 1 END,
+    f2.fetched_at DESC,
+    f2.rowid DESC
+  LIMIT 1
 );
 `;
 
@@ -300,11 +367,50 @@ function migrateLegacyNames(db) {
     if (!cols.includes("details_scope")) {
       db.exec("ALTER TABLE flight_price ADD COLUMN details_scope TEXT NOT NULL DEFAULT 'outbound'");
     }
+    // Pre-origin-group rows were all quoted AMS,RTM with outbound_date =
+    // start_date - 1, so 'nl'/'early' is what they factually are -- they seed
+    // that cell's freshness instead of being re-searched.
+    if (!cols.includes("origin_group")) {
+      db.exec("ALTER TABLE flight_price ADD COLUMN origin_group TEXT NOT NULL DEFAULT 'nl'");
+    }
+    if (!cols.includes("arrival_mode")) {
+      db.exec("ALTER TABLE flight_price ADD COLUMN arrival_mode TEXT NOT NULL DEFAULT 'early'");
+    }
+    if (!cols.includes("provider")) {
+      db.exec("ALTER TABLE flight_price ADD COLUMN provider TEXT NOT NULL DEFAULT 'serpapi'");
+    }
+    if (!cols.includes("config_key")) {
+      db.exec("ALTER TABLE flight_price ADD COLUMN config_key TEXT NOT NULL DEFAULT 'legacy'");
+    }
+    if (!cols.includes("pricing_mode")) {
+      db.exec("ALTER TABLE flight_price ADD COLUMN pricing_mode TEXT NOT NULL DEFAULT 'legacy'");
+    }
+    // Return-leg fields; legacy round-trip rows keep them null and
+    // details_scope 'outbound'.
+    for (const [column, type] of [
+      ["price_outbound", "REAL"], ["price_return", "REAL"],
+      ["return_dep_airport", "TEXT"], ["return_arr_airport", "TEXT"],
+      ["return_airline", "TEXT"], ["return_stops", "INTEGER"],
+      ["return_duration_min", "INTEGER"], ["return_segments", "TEXT"],
+    ]) {
+      if (!cols.includes(column)) {
+        db.exec(`ALTER TABLE flight_price ADD COLUMN ${column} ${type}`);
+      }
+    }
   }
   if (hasTable("flight_search")) {
     const cols = db.prepare("PRAGMA table_info(flight_search)").all().map((c) => c.name);
     if (!cols.includes("config_key")) {
       db.exec("ALTER TABLE flight_search ADD COLUMN config_key TEXT NOT NULL DEFAULT 'legacy'");
+    }
+    if (!cols.includes("arrival_mode")) {
+      db.exec("ALTER TABLE flight_search ADD COLUMN arrival_mode TEXT NOT NULL DEFAULT 'early'");
+    }
+    if (!cols.includes("provider")) {
+      db.exec("ALTER TABLE flight_search ADD COLUMN provider TEXT NOT NULL DEFAULT 'serpapi'");
+    }
+    if (!cols.includes("direction")) {
+      db.exec("ALTER TABLE flight_search ADD COLUMN direction TEXT NOT NULL DEFAULT 'roundtrip'");
     }
   }
   // Remove a legacy Lyon-only transport-price column. Transport-inclusive
@@ -384,32 +490,61 @@ export function upsertWeek(db, r) {
   );
 }
 
-/** One flight quote per SerpApi search, append-only (same discipline as
- *  week). r.price null = "searched, no flights found" -- stored anyway
- *  so the freshness check in src/flights.mjs covers no-result dates too. */
+/** One flight quote per (origin group x gateway) cell of a search,
+ *  append-only (same discipline as week). r.price null = "searched, no
+ *  flights found" -- stored anyway so the freshness check in src/flights.mjs
+ *  covers no-result dates too. */
 export function insertFlightPrice(db, r) {
   db.prepare(
     `INSERT INTO flight_price
-       (origins, dests, gateway, outbound_date, return_date, fetched_at,
-        price, dep_airport, arr_airport, airline, stops, duration_min,
-        outbound_segments, details_scope, price_level)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+       (origins, dests, gateway, origin_group, arrival_mode, provider, config_key,
+        outbound_date, return_date, fetched_at,
+        price, price_outbound, price_return, pricing_mode,
+        dep_airport, arr_airport, airline, stops, duration_min, outbound_segments,
+        return_dep_airport, return_arr_airport, return_airline, return_stops,
+        return_duration_min, return_segments,
+        details_scope, price_level)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
   ).run(
-    r.origins, r.dests, r.gateway, r.outbound_date, r.return_date, new Date().toISOString(),
-    r.price, r.dep_airport, r.arr_airport, r.airline, r.stops, r.duration_min,
-    JSON.stringify(r.outbound_segments ?? []), r.details_scope ?? "outbound", r.price_level
+    r.origins, r.dests, r.gateway, r.origin_group ?? "nl", r.arrival_mode ?? "early",
+    r.provider ?? "serpapi", r.config_key ?? "legacy",
+    r.outbound_date, r.return_date, new Date().toISOString(),
+    r.price, r.price_outbound ?? null, r.price_return ?? null, r.pricing_mode ?? "legacy",
+    r.dep_airport, r.arr_airport, r.airline, r.stops, r.duration_min,
+    JSON.stringify(r.outbound_segments ?? []),
+    r.return_dep_airport ?? null, r.return_arr_airport ?? null, r.return_airline ?? null,
+    r.return_stops ?? null, r.return_duration_min ?? null,
+    JSON.stringify(r.return_segments ?? []),
+    r.details_scope ?? "outbound", r.price_level
+  );
+}
+
+export function insertReturnSchedule(db, r) {
+  db.prepare(
+    `INSERT INTO flight_return_schedule
+       (origin_group, gateway, origins, dests, return_date, config_key, provider,
+        fetched_at, price, dep_airport, arr_airport, airline, stops, duration_min,
+        segments, candidate_count, window_dropped)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+  ).run(
+    r.origin_group, r.gateway, r.origins, r.dests, r.return_date,
+    r.config_key, r.provider, new Date().toISOString(), r.price,
+    r.dep_airport, r.arr_airport, r.airline, r.stops, r.duration_min,
+    JSON.stringify(r.segments ?? []), r.candidate_count ?? 0, r.window_dropped ?? 0
   );
 }
 
 export function startFlightSearch(db, {
   outboundDate, returnDate, weekKey, billingMonth, configKey = "legacy",
+  arrivalMode = "early", provider = "serpapi", direction = "roundtrip",
 }) {
   const attemptedAt = new Date().toISOString();
   const result = db.prepare(
     `INSERT INTO flight_search
-       (outbound_date, return_date, attempted_at, week_key, billing_month, config_key, status)
-     VALUES (?, ?, ?, ?, ?, ?, 'started')`
-  ).run(outboundDate, returnDate, attemptedAt, weekKey, billingMonth, configKey);
+       (outbound_date, return_date, attempted_at, week_key, billing_month, config_key,
+        arrival_mode, provider, direction, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'started')`
+  ).run(outboundDate, returnDate, attemptedAt, weekKey, billingMonth, configKey, arrivalMode, provider, direction);
   return Number(result.lastInsertRowid);
 }
 
