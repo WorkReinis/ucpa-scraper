@@ -222,7 +222,7 @@ export default function App() {
             </span>
             <div className="brand-copy">
               <span className="brand-text">UCPA Tracker</span>
-              <span className="brand-tagline">Ski packages and flights, in one view</span>
+              <span className="brand-tagline">Ski, board, and the flight to get there</span>
             </div>
           </div>
           <button type="button" className="changelog-nav-button" onClick={() => setShowChangelog(true)}>
