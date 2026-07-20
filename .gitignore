@@ -9,6 +9,7 @@ web/dist/
 web/public/data/
 .refresh-summary.json
 .flight-summary.json
+.flight-coverage.json
 .scrape-summary.json
 .claude/
 ucpa.db.bak-*

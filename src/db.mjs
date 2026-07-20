@@ -101,7 +101,7 @@ CREATE TABLE IF NOT EXISTS watch (
   note        TEXT
 );
 
--- Tier 3: round-trip flight quotes (Google Flights via SerpApi, see
+-- Tier 3: paired flight quotes (Google Flights via configured providers, see
 -- src/flights.mjs). Append-only like observation/week: one row per
 -- search, never UPDATEd. Keyed on a validated resort gateway plus the date
 -- pair, so packages share quotes only when their airports are compatible.
@@ -119,7 +119,7 @@ CREATE TABLE IF NOT EXISTS flight_price (
   outbound_date  TEXT NOT NULL,   -- = week.start_date ('standard') or -1 day ('early')
   return_date    TEXT NOT NULL,   -- = week.end_date
   fetched_at     TEXT NOT NULL,
-  price          REAL,            -- authoritative trip total, EUR
+  price          REAL,            -- complete displayed flight total, EUR
   price_outbound REAL,            -- populated only for explicitly separate one-way bookings
   price_return   REAL,
   pricing_mode   TEXT NOT NULL DEFAULT 'legacy', -- roundtrip / separate / legacy
@@ -137,15 +137,22 @@ CREATE TABLE IF NOT EXISTS flight_price (
   return_segments TEXT,           -- JSON array; every return segment
   details_scope  TEXT NOT NULL DEFAULT 'outbound', -- 'both' when both schedules are stored
   price_level    TEXT,            -- Google's own read: low / typical / high
+  candidate_count INTEGER NOT NULL DEFAULT -1, -- raw outbound itineraries in this origin/gateway cell
+  window_dropped INTEGER NOT NULL DEFAULT -1,
+  date_dropped   INTEGER NOT NULL DEFAULT -1, -- overnight arrivals rejected for the package arrival day
+  stops_dropped  INTEGER NOT NULL DEFAULT -1,
+  return_candidate_count INTEGER NOT NULL DEFAULT -1,
+  return_window_dropped INTEGER NOT NULL DEFAULT -1,
+  return_date_dropped INTEGER NOT NULL DEFAULT -1,
+  return_stops_dropped INTEGER NOT NULL DEFAULT -1,
   PRIMARY KEY (origins, dests, outbound_date, return_date, fetched_at)
 );
 CREATE INDEX IF NOT EXISTS idx_flight_dates ON flight_price(outbound_date, return_date);
 
--- Return schedules are shared by the standard and early-arrival fare
--- searches. Keep them independently so fare refreshes can reuse a recently
--- validated shuttle-compatible return instead of spending one provider
--- request per date pair every time. price is the one-way search result used
--- only as an availability sentinel; it is never added to the package fare.
+-- Return fares and schedules are shared by the standard and early-arrival
+-- searches. Keep them independently so both modes can reuse the same current,
+-- transfer-window-compatible return. price is the separately bookable
+-- one-way fare and is added to each mode's outbound one-way fare.
 CREATE TABLE IF NOT EXISTS flight_return_schedule (
   origin_group   TEXT NOT NULL,
   gateway        TEXT NOT NULL,
@@ -164,6 +171,8 @@ CREATE TABLE IF NOT EXISTS flight_return_schedule (
   segments       TEXT,
   candidate_count INTEGER NOT NULL DEFAULT 0,
   window_dropped  INTEGER NOT NULL DEFAULT 0,
+  date_dropped    INTEGER NOT NULL DEFAULT 0,
+  stops_dropped   INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (origin_group, gateway, return_date, config_key, fetched_at)
 );
 CREATE INDEX IF NOT EXISTS idx_return_schedule_current
@@ -392,6 +401,14 @@ function migrateLegacyNames(db) {
       ["return_dep_airport", "TEXT"], ["return_arr_airport", "TEXT"],
       ["return_airline", "TEXT"], ["return_stops", "INTEGER"],
       ["return_duration_min", "INTEGER"], ["return_segments", "TEXT"],
+      ["candidate_count", "INTEGER NOT NULL DEFAULT -1"],
+      ["window_dropped", "INTEGER NOT NULL DEFAULT -1"],
+      ["date_dropped", "INTEGER NOT NULL DEFAULT -1"],
+      ["stops_dropped", "INTEGER NOT NULL DEFAULT -1"],
+      ["return_candidate_count", "INTEGER NOT NULL DEFAULT -1"],
+      ["return_window_dropped", "INTEGER NOT NULL DEFAULT -1"],
+      ["return_date_dropped", "INTEGER NOT NULL DEFAULT -1"],
+      ["return_stops_dropped", "INTEGER NOT NULL DEFAULT -1"],
     ]) {
       if (!cols.includes(column)) {
         db.exec(`ALTER TABLE flight_price ADD COLUMN ${column} ${type}`);
@@ -411,6 +428,14 @@ function migrateLegacyNames(db) {
     }
     if (!cols.includes("direction")) {
       db.exec("ALTER TABLE flight_search ADD COLUMN direction TEXT NOT NULL DEFAULT 'roundtrip'");
+    }
+  }
+  if (hasTable("flight_return_schedule")) {
+    const cols = db.prepare("PRAGMA table_info(flight_return_schedule)").all().map((c) => c.name);
+    for (const column of ["date_dropped", "stops_dropped"]) {
+      if (!cols.includes(column)) {
+        db.exec(`ALTER TABLE flight_return_schedule ADD COLUMN ${column} INTEGER NOT NULL DEFAULT 0`);
+      }
     }
   }
   // Remove a legacy Lyon-only transport-price column. Transport-inclusive
@@ -503,8 +528,10 @@ export function insertFlightPrice(db, r) {
         dep_airport, arr_airport, airline, stops, duration_min, outbound_segments,
         return_dep_airport, return_arr_airport, return_airline, return_stops,
         return_duration_min, return_segments,
-        details_scope, price_level)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+        details_scope, price_level,
+        candidate_count, window_dropped, date_dropped, stops_dropped,
+        return_candidate_count, return_window_dropped, return_date_dropped, return_stops_dropped)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
   ).run(
     r.origins, r.dests, r.gateway, r.origin_group ?? "nl", r.arrival_mode ?? "early",
     r.provider ?? "serpapi", r.config_key ?? "legacy",
@@ -515,7 +542,11 @@ export function insertFlightPrice(db, r) {
     r.return_dep_airport ?? null, r.return_arr_airport ?? null, r.return_airline ?? null,
     r.return_stops ?? null, r.return_duration_min ?? null,
     JSON.stringify(r.return_segments ?? []),
-    r.details_scope ?? "outbound", r.price_level
+    r.details_scope ?? "outbound", r.price_level ?? null,
+    r.candidate_count ?? -1, r.window_dropped ?? -1,
+    r.date_dropped ?? -1, r.stops_dropped ?? -1,
+    r.return_candidate_count ?? -1, r.return_window_dropped ?? -1,
+    r.return_date_dropped ?? -1, r.return_stops_dropped ?? -1
   );
 }
 
@@ -524,13 +555,14 @@ export function insertReturnSchedule(db, r) {
     `INSERT INTO flight_return_schedule
        (origin_group, gateway, origins, dests, return_date, config_key, provider,
         fetched_at, price, dep_airport, arr_airport, airline, stops, duration_min,
-        segments, candidate_count, window_dropped)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+        segments, candidate_count, window_dropped, date_dropped, stops_dropped)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
   ).run(
     r.origin_group, r.gateway, r.origins, r.dests, r.return_date,
     r.config_key, r.provider, new Date().toISOString(), r.price,
     r.dep_airport, r.arr_airport, r.airline, r.stops, r.duration_min,
-    JSON.stringify(r.segments ?? []), r.candidate_count ?? 0, r.window_dropped ?? 0
+    JSON.stringify(r.segments ?? []), r.candidate_count ?? 0, r.window_dropped ?? 0,
+    r.date_dropped ?? 0, r.stops_dropped ?? 0
   );
 }
 

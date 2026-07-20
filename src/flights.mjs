@@ -1,20 +1,20 @@
 // node src/flights.mjs -> refresh flight quotes for upcoming weeks
 //
 // Google Flights via the provider seam in src/providers/ (Apify actor
-// primary, SerpApi fallback). Each arrival mode uses a real round-trip search
-// whose price is authoritative. One shared return one-way search supplies a
-// shuttle-compatible return schedule without being added to that fare: per
-// (start, end) week pair that's one round-trip search per mode. A separately
-// cached return schedule is refreshed every 14 days, so most fare cycles need
-// 2 searches/pair instead of 3. Searches include only gateways used by that
-// date pair; a missing origin x gateway cell gets one exact narrow retry.
+// primary, SerpApi fallback). Every displayed itinerary is priced as two
+// separately bookable one-way tickets: one outbound search per arrival mode
+// plus one shared return search per (start, end) pair. This is intentional:
+// the Apify actor exposes departure_token but cannot consume it, so attaching
+// an independently selected return to its round-trip fare would be false.
+// Searches include only gateways used by that date pair; a missing origin x
+// gateway cell gets one exact narrow retry.
 //
 // Shuttle viability: itineraries are filtered by the transfer windows in
 // src/airports.mjs (TRANSFER_BANDS) -- outbound flights must land before
 // the gateway airport's latest-arrival time, return flights must depart
-// after its earliest-departure time. The stored price is the authoritative
-// round-trip fare; the separate return search contributes schedule details
-// only and is never added to that fare.
+// after its earliest-departure time. Transfer-service availability is assumed;
+// the policy deliberately checks time windows only. The stored flight price is
+// the sum of the chosen outbound and return one-way fares.
 //
 // Quotes land append-only in flight_price (src/db.mjs). The flight_search
 // ledger keeps successful quotes fresh for six days, allows no more than two
@@ -39,17 +39,20 @@ import {
   earliestReturnDepartureFor, gatewayById, gatewayForResort, latestArrivalFor, originGroupById,
 } from "./airports.mjs";
 import {
-  search as providerSearch, configuredProviders, MONTHLY_RUN_LIMIT_APIFY,
+  searchWithProvider as providerSearchWithProvider, configuredProviders, MONTHLY_RUN_LIMIT_APIFY,
 } from "./providers/index.mjs";
+import { MAX_FLIGHT_STOPS } from "./flight-config.mjs";
 
 export const MONTHLY_SEARCH_LIMIT = 225; // SerpApi free-tier ceiling
 export const FLIGHT_REFRESH_DAYS = 6;
-export const RETURN_SCHEDULE_REFRESH_DAYS = 14;
+// Return rows now contribute to the displayed price, so they must be no older
+// than the outbound fare they are combined with.
+export const RETURN_SCHEDULE_REFRESH_DAYS = FLIGHT_REFRESH_DAYS;
 export const MAX_ATTEMPTS_PER_PAIR_WINDOW = 2;
 // Wide enough that a summer refresh still covers the whole Nov-Apr season
 // (the current catalogue is only ~22 distinct weeks, so this cap is about
 // not querying beyond Google's ~11-month booking horizon, not about quota).
-const MONTHS_AHEAD = 10;
+export const FLIGHT_MONTHS_AHEAD = 10;
 const DELAY_MS = 1200;  // pacing between searches, same manners as scrape.mjs
 
 // 'standard': fly out on the package's own start_date (Sunday check-in).
@@ -82,6 +85,11 @@ function addDays(iso, days) {
 // Lexical comparison on the sliced time-of-day is correct for both.
 function timeOfDay(value) {
   const match = /\b(\d{2}:\d{2})$/.exec(value ?? "");
+  return match ? match[1] : null;
+}
+
+function calendarDate(value) {
+  const match = /^(\d{4}-\d{2}-\d{2})\b/.exec(value ?? "");
   return match ? match[1] : null;
 }
 
@@ -138,9 +146,25 @@ export function parseFlightResponse(j, {
               gatewaySet.has(it.flights.at(-1)?.arrival_airport?.id);
   const cellItineraries = validItineraries.filter(inCell);
 
+  // A flight sold for Saturday that lands on Sunday cannot serve the early
+  // arrival mode, even if its arrival clock time is before the shuttle
+  // cutoff. Return flights may land home the following day, but must still
+  // leave the resort gateway on the searched return date.
+  const sameTravelDay = cellItineraries.filter((it) => {
+    const legs = it.flights;
+    const relevant = direction === "return"
+      ? [legs[0]?.departure_airport?.time]
+      : [legs[0]?.departure_airport?.time, legs.at(-1)?.arrival_airport?.time];
+    return relevant.every((value) => {
+      const date = calendarDate(value);
+      return date == null || date === outboundDate;
+    });
+  });
+  const practical = sameTravelDay.filter((it) => it.flights.length - 1 <= MAX_FLIGHT_STOPS);
+
   // Shuttle-viability window (src/airports.mjs TRANSFER_BANDS). Skipped for
   // the legacy gateway sentinel, which has no transfer config.
-  const viable = gateway === "legacy" ? cellItineraries : cellItineraries.filter((it) => {
+  const viable = gateway === "legacy" ? practical : practical.filter((it) => {
     if (direction === "return") {
       const firstLeg = it.flights[0];
       const departs = timeOfDay(firstLeg.departure_airport.time);
@@ -168,7 +192,9 @@ export function parseFlightResponse(j, {
     segments: [],
     price_level: j.price_insights?.price_level ?? null,
     candidate_count: cellItineraries.length,
-    window_dropped: cellItineraries.length - viable.length,
+    date_dropped: cellItineraries.length - sameTravelDay.length,
+    stops_dropped: sameTravelDay.length - practical.length,
+    window_dropped: practical.length - viable.length,
   };
   if (!viable.length) return row;
 
@@ -195,15 +221,12 @@ export function parseFlightResponse(j, {
   };
 }
 
-/** Attach a viable return schedule to an authoritative round-trip fare.
- * `outbound.price` is the complete round-trip total returned by the outbound
- * round-trip search; `ret.price` is used only to prove that a return schedule
- * fits the shuttle window. It must never be added to the fare.
- *
- * `pricingMode: "separate"` remains available for a future explicitly
- * labelled two-booking strategy, where summing independently bookable
- * one-ways is intentional. */
-export function combineDirections(outbound, ret, { pricingMode = "roundtrip" } = {}) {
+/** Combine a viable outbound and return. Production uses `separate`: both
+ * halves came from one-way searches, their prices are added, and the UI can
+ * truthfully identify the result as two bookings. `roundtrip` remains only
+ * for validated legacy/imported rows whose return was selected through the
+ * same fare token. */
+export function combineDirections(outbound, ret, { pricingMode = "separate" } = {}) {
   const complete = outbound.price != null && ret.price != null;
   const separate = pricingMode === "separate";
   return {
@@ -231,14 +254,28 @@ export function combineDirections(outbound, ret, { pricingMode = "roundtrip" } =
     return_segments: ret.segments,
     details_scope: "both",
     price_level: outbound.price_level ?? null,
+    candidate_count: outbound.candidate_count,
+    window_dropped: outbound.window_dropped,
+    date_dropped: outbound.date_dropped,
+    stops_dropped: outbound.stops_dropped,
+    return_candidate_count: ret.candidate_count,
+    return_window_dropped: ret.window_dropped,
+    return_date_dropped: ret.date_dropped,
+    return_stops_dropped: ret.stops_dropped,
   };
 }
 
+/** A broad flexible-airport response is not authoritative when it produces
+ * no viable price for a cell. It may have omitted later/more expensive
+ * options, so that exact origin-group/gateway pair earns one deeper retry. */
+export function cellNeedsTargetedRetry(cell) {
+  return cell?.price == null;
+}
+
 /** Origin groups for which a broad provider response contained no raw
- * itinerary for at least one required gateway. A zero viable-price cell is
- * not automatically a gap: if candidate_count is non-zero, the shuttle
- * window deliberately rejected those flights and a wider search should not
- * silently bypass that policy. */
+ * itinerary for at least one required gateway. This reports raw matrix
+ * coverage only; cellNeedsTargetedRetry also handles candidates rejected by
+ * feasibility filters. */
 export function originGroupsMissingCoverage(cells, gateways, originGroups = ORIGIN_GROUPS) {
   return originGroups.filter((group) => gateways.some((gateway) =>
     (cells.get(`${group.id}|${gateway.id}`)?.candidate_count ?? 0) === 0
@@ -269,7 +306,7 @@ export async function runFlightRefresh({
   db,
   providerNames,
   originGroupIds,
-  searchProvider = providerSearch,
+  searchProvider,
   delay = sleep,
 } = {}) {
   const providers = providerNames ?? configuredProviders();
@@ -286,6 +323,9 @@ export async function runFlightRefresh({
   }
   const targetOriginGroups = requestedOriginIds.map(originGroupById);
   const targetOriginAirportIds = targetOriginGroups.flatMap((group) => group.airports).join(",");
+  const dispatchSearch = searchProvider
+    ? (provider, options) => searchProvider(options, provider)
+    : (provider, options) => providerSearchWithProvider(provider, options);
 
   const _db = db ?? open();
 
@@ -295,7 +335,7 @@ export async function runFlightRefresh({
      WHERE w.seats_left > 0 AND w.end_date IS NOT NULL
        AND w.start_date > date('now') AND w.start_date <= date('now', ?)
      ORDER BY w.start_date`
-  ).all(`+${MONTHS_AHEAD} months`);
+  ).all(`+${FLIGHT_MONTHS_AHEAD} months`);
   const pairMap = new Map();
   for (const row of pairRows) {
     const gateway = gatewayForResort(row.resort);
@@ -318,6 +358,18 @@ export async function runFlightRefresh({
   const monthlyAttempts = Object.fromEntries(
     providers.map((p) => [p, monthlyAttemptsStmt.get(billingMonth, p).n])
   );
+  // SerpApi usage can also happen outside this database. Once its own API
+  // explicitly reports exhaustion, remember that fact for the billing month
+  // instead of repeatedly retrying it or advertising fictitious quota.
+  const serpApiExhausted = _db.prepare(
+    `SELECT 1 FROM flight_search
+     WHERE billing_month = ? AND provider = 'serpapi' AND status = 'failed'
+       AND lower(COALESCE(error, '')) LIKE '%run out of searches%'
+     LIMIT 1`
+  ).get(billingMonth);
+  if (serpApiExhausted && Object.hasOwn(monthlyAttempts, "serpapi")) {
+    monthlyAttempts.serpapi = MONTHLY_SEARCH_LIMIT;
+  }
   const freshQuotes = _db.prepare(
     `SELECT gateway, origin_group, dests, origins FROM flight_price
      WHERE outbound_date = ? AND return_date = ?
@@ -343,7 +395,8 @@ export async function runFlightRefresh({
   const recentAttempts = _db.prepare(
     `SELECT COUNT(*) n FROM flight_search
      WHERE outbound_date = ? AND return_date = ?
-       AND config_key = ?
+       AND config_key = ? AND direction = ?
+       AND provider = ?
        AND status IN ('started', 'failed')
        AND date(attempted_at) > date('now', ?)`
   );
@@ -374,51 +427,83 @@ export async function runFlightRefresh({
     quotaLimit: primaryProvider === "apify" ? MONTHLY_RUN_LIMIT_APIFY : MONTHLY_SEARCH_LIMIT,
     quotaUsed: monthlyAttempts[primaryProvider],
     quotaExhausted: false,
+    providerAttempts: 0,
+    providerAttemptFailures: 0,
+    providerFallbacks: 0,
     errors: [],
   };
+
+  const quotaLimitFor = (provider) =>
+    provider === "apify" ? MONTHLY_RUN_LIMIT_APIFY : MONTHLY_SEARCH_LIMIT;
+  const providerWithQuota = () => providers.find(
+    (provider) => monthlyAttempts[provider] < quotaLimitFor(provider)
+  );
 
   const runSearch = async ({
     originIds, destIds, outboundDate, returnDate, direction, arrivalMode, scope = "broad",
   }) => {
-    const quotaLimit = primaryProvider === "apify" ? MONTHLY_RUN_LIMIT_APIFY : MONTHLY_SEARCH_LIMIT;
-    if (monthlyAttempts[primaryProvider] >= quotaLimit) {
-      summary.quotaExhausted = true;
-      throw new Error(`run out of searches: ${primaryProvider} monthly quota reached`);
-    }
-    const searchId = startFlightSearch(_db, {
-      outboundDate,
-      returnDate,
-      weekKey: refreshKey,
-      billingMonth,
-      configKey: AIRPORT_CONFIG_KEY,
-      arrivalMode,
-      provider: primaryProvider,
-      direction,
-    });
-    monthlyAttempts[primaryProvider]++;
-    try {
-      const { raw, provider: usedProvider, secrets } = await searchProvider({
-        originIds,
-        destIds,
-        outboundDate,
-        // Outbound searches are genuine round trips so `price` is the fare
-        // a user sees on Google Flights. Return searches remain one-way and
-        // contribute schedule/viability only.
-        returnDate: direction === "outbound" ? returnDate : undefined,
-      });
-      if (usedProvider !== primaryProvider) {
-        monthlyAttempts[usedProvider] = (monthlyAttempts[usedProvider] ?? 0) + 1;
+    let lastError;
+    let failedProviders = 0;
+    let unavailableProviders = 0;
+    for (const provider of providers) {
+      const quotaLimit = quotaLimitFor(provider);
+      if (monthlyAttempts[provider] >= quotaLimit) {
+        summary.quotaSkipped++;
+        unavailableProviders++;
+        continue;
       }
-      summary.searched++;
-      if (scope === "targeted") summary.targetedRetries++;
-      else summary.broadSearches++;
-      return { searchId, raw, usedProvider, secrets };
-    } catch (e) {
-      finishFlightSearch(_db, searchId, "failed", e.message);
-      summary.failed++;
-      summary.errors.push(e.message);
-      throw e;
+      const searchId = startFlightSearch(_db, {
+        outboundDate,
+        returnDate,
+        weekKey: refreshKey,
+        billingMonth,
+        configKey: AIRPORT_CONFIG_KEY,
+        arrivalMode,
+        provider,
+        direction,
+      });
+      monthlyAttempts[provider]++;
+      summary.providerAttempts++;
+      try {
+        const { raw, provider: usedProvider = provider, secrets = [] } = await dispatchSearch(provider, {
+          originIds,
+          destIds,
+          outboundDate,
+          // Both directions are one-way. Combining their prices is the only
+          // truthful fallback for providers that cannot follow Google's
+          // departure_token to retrieve returns belonging to a round trip.
+          returnDate: undefined,
+          exhaustive: scope === "targeted",
+        });
+        if (usedProvider !== provider) {
+          throw new Error(`provider dispatcher returned ${usedProvider} while accounting ${provider}`);
+        }
+        if (failedProviders) summary.providerFallbacks++;
+        summary.searched++;
+        if (scope === "targeted") summary.targetedRetries++;
+        else summary.broadSearches++;
+        return { searchId, raw, usedProvider, secrets };
+      } catch (error) {
+        finishFlightSearch(_db, searchId, "failed", error.message);
+        summary.providerAttemptFailures++;
+        failedProviders++;
+        lastError = error;
+        if (/run out of searches|below reserve|no .* has remaining credit/i.test(error.message)) {
+          unavailableProviders++;
+        }
+        console.error(`  ! provider ${provider} failed:`, error.message);
+      }
     }
+    summary.failed++;
+    if (!lastError) {
+      lastError = new Error("run out of searches: every configured provider reached its monthly quota");
+    }
+    // Only stop the whole refresh when every configured provider is actually
+    // out of usable quota. A transient primary-provider failure followed by
+    // an exhausted fallback must not discard the remaining season.
+    if (unavailableProviders === providers.length) summary.quotaExhausted = true;
+    summary.errors.push(lastError.message);
+    throw lastError;
   };
 
   outer:
@@ -442,11 +527,14 @@ export async function runFlightRefresh({
         summary.modesDue++;
         summary.cellsDue += requiredCells.length;
       }
+      const availableProvider = providerWithQuota();
       const policy = flightPolicy({
-        monthlyAttempts: monthlyAttempts[primaryProvider],
-        recentAttempts: recentAttempts.get(flightDate, end_date, AIRPORT_CONFIG_KEY, freshnessWindow).n,
+        monthlyAttempts: availableProvider ? monthlyAttempts[availableProvider] : Number.MAX_SAFE_INTEGER,
+        recentAttempts: recentAttempts.get(
+          flightDate, end_date, AIRPORT_CONFIG_KEY, "outbound", primaryProvider, freshnessWindow
+        ).n,
         hasFreshQuote,
-        provider: primaryProvider,
+        provider: availableProvider ?? primaryProvider,
       });
       if (policy === "search") staleModes.push({ ...mode, flightDate });
       else {
@@ -486,10 +574,10 @@ export async function runFlightRefresh({
     };
 
     // Google Flights treats a many-origin/many-destination request as a
-    // flexible search, not a Cartesian API. Retry only a cell for which the
-    // broad response returned no candidate at all. A cell with candidates
-    // that all miss the shuttle window is a real policy result, not a reason
-    // to spend another provider request.
+    // flexible search, not a Cartesian API. If an exact cell has no viable
+    // fare—whether omitted entirely or because every returned candidate was
+    // rejected—retry that cell once with deeper provider results. The same
+    // date/stop/transfer filters are applied again; this never widens policy.
     const recoverMissingCoverage = async (cells, {
       direction, outboundDate, returnDate, arrivalMode,
     }) => {
@@ -497,7 +585,8 @@ export async function runFlightRefresh({
       for (const originGroup of targetOriginGroups) {
         for (const gateway of gateways) {
           const cellKey = `${originGroup.id}|${gateway.id}`;
-          if ((covered.get(cellKey)?.candidate_count ?? 0) !== 0) continue;
+          const previousCell = covered.get(cellKey);
+          if (!cellNeedsTargetedRetry(previousCell)) continue;
           let recoverySearch;
           try {
             recoverySearch = await runSearch({
@@ -519,8 +608,11 @@ export async function runFlightRefresh({
               recovered.get(cellKey)?.price != null ? "success" : "no_result"
             );
             summary.recoverySearches++;
+            const reason = (previousCell?.candidate_count ?? 0) === 0
+              ? "missing broad coverage"
+              : "no broad candidate fit policy";
             console.log(
-              `    retried ${originGroup.id}/${gateway.id} ${direction} via ${recoverySearch.usedProvider}`
+              `    retried ${originGroup.id}/${gateway.id} ${direction} via ${recoverySearch.usedProvider} (${reason})`
             );
           } catch (error) {
             // runSearch has already closed provider failures. A set search row
@@ -540,9 +632,9 @@ export async function runFlightRefresh({
       return covered;
     };
 
-    // A return schedule is shared by both arrival modes and cached longer
-    // than fares. Null-price rows are cached too: they truthfully mean the
-    // cell was searched but no shuttle-compatible return was available.
+    // A return fare/schedule is shared by both arrival modes. Null-price rows
+    // are cached too: broad and focused searches both found no return inside
+    // the configured transfer window.
     let returnCells;
     const cachedReturnCells = new Map(
       freshReturnSchedules
@@ -566,6 +658,17 @@ export async function runFlightRefresh({
       summary.returnCacheHits++;
       summary.returnCellsReused += returnCells.size;
     } else {
+      const failedReturnAttempts = recentAttempts.get(
+        end_date, end_date, AIRPORT_CONFIG_KEY, "return", primaryProvider, freshnessWindow
+      ).n;
+      if (failedReturnAttempts >= MAX_ATTEMPTS_PER_PAIR_WINDOW) {
+        summary.recentAttemptSkipped++;
+        summary.skipped++;
+        console.warn(
+          `  ! ${end_date} return leg skipped after ${failedReturnAttempts} recent failed provider attempts`
+        );
+        continue;
+      }
       let returnSearch;
       let returnSearchClosed = false;
       try {
@@ -601,7 +704,7 @@ export async function runFlightRefresh({
           summary.errors.push(e.message);
         }
         console.error(`  ! ${end_date} return leg failed:`, e.message);
-        if (/run out of searches|below reserve|no .* has remaining credit/i.test(e.message)) break outer;
+        if (summary.quotaExhausted) break outer;
         await delay(DELAY_MS);
         continue; // outbound halves are useless without the return -- retry next refresh
       }
@@ -631,7 +734,9 @@ export async function runFlightRefresh({
         const rows = [];
         for (const [cellKey, outboundCell] of outboundCells) {
           rows.push({
-            combined: combineDirections(outboundCell, returnCells.get(cellKey)),
+            combined: combineDirections(outboundCell, returnCells.get(cellKey), {
+              pricingMode: "separate",
+            }),
             dropped: {
               late: outboundCell.window_dropped,
               early: returnCells.get(cellKey).window_dropped,
@@ -655,7 +760,7 @@ export async function runFlightRefresh({
           `  ${mode.flightDate} -> ${end_date} (${mode.id}, package starts ${start_date}, via ${outboundSearch.usedProvider}): ` +
           (found.length
             ? found.map(({ combined, dropped }) =>
-                `${combined.origin_group}/${combined.gateway}=€${combined.price} round trip ` +
+                `${combined.origin_group}/${combined.gateway}=€${combined.price} separate tickets ` +
                 `${combined.dep_airport}->${combined.arr_airport}/${combined.return_dep_airport}->${combined.return_arr_airport}` +
                 (dropped.late || dropped.early ? ` (${dropped.late} late, ${dropped.early} early dropped)` : "")
               ).join("; ")
@@ -670,13 +775,18 @@ export async function runFlightRefresh({
           summary.errors.push(e.message);
         }
         console.error(`  ! ${mode.flightDate} -> ${end_date} (${mode.id}) failed:`, e.message);
-        if (/run out of searches|below reserve|no .* has remaining credit/i.test(e.message)) break outer;
+        if (summary.quotaExhausted) break outer;
       }
       await delay(DELAY_MS);
     }
   }
   summary.quotaUsed = monthlyAttempts[primaryProvider];
   summary.quotaRemaining = Math.max(summary.quotaLimit - summary.quotaUsed, 0);
+  summary.quotaByProvider = Object.fromEntries(providers.map((provider) => [provider, {
+    used: monthlyAttempts[provider],
+    limit: quotaLimitFor(provider),
+    remaining: Math.max(quotaLimitFor(provider) - monthlyAttempts[provider], 0),
+  }]));
   summary.cellsMissing = Math.max(summary.cellsDue - summary.cellsStored, 0);
   summary.unresolvedCells = summary.cellsUnpriced + summary.cellsMissing;
   summary.complete = summary.failed === 0 && summary.cellsMissing === 0;

@@ -1,3 +1,5 @@
+import { FLIGHT_SEARCH_MARKET, MAX_FLIGHT_STOPS } from "./flight-config.mjs";
+
 // Shuttle-viability policy: a flight only counts if ground transport to the
 // resort is still catchable. Rather than hand-picking a cutoff per airport,
 // one scalar per (gateway, airport) -- the typical transfer duration to the
@@ -22,8 +24,8 @@ export const TRANSFER_BANDS = [
 // GNB/GVA/LYS Saturday services, GVA->Chamonix buses to ~20:35
 // (FlixBus/easyBus), Linkbus TRN<->Serre Chevalier Saturday line, ZOU
 // Marseille->Guillestre reserved shuttle (Queyras is reservation-only --
-// noted, not overridden), liO 963 + SkiGo for Saint-Lary. Private
-// transfer/taxi backstop assumed for evening arrivals per user direction.
+// noted, not overridden), liO 963 + SkiGo for Saint-Lary. Transfer service
+// availability is deliberately assumed; only these time windows are applied.
 // overrides: per-airport { latestArrival, earliestReturnDeparture } escape
 // hatch for pairs the bands can't express. Empty at launch.
 export const AIRPORT_GATEWAYS = [
@@ -88,7 +90,7 @@ export const ORIGIN_AIRPORTS = ORIGIN_GROUPS.flatMap((group) => group.airports);
 // overrides: editing any of them invalidates the flight_search freshness
 // ledger, so the next refresh automatically re-quotes with the new rules.
 export const AIRPORT_CONFIG_KEY = [
-  "search:roundtrip-price-with-return-schedule-v3",
+  `search:separate-one-way-pair-v5:market=${FLIGHT_SEARCH_MARKET}:max-stops=${MAX_FLIGHT_STOPS}:same-day-arrival`,
   ORIGIN_GROUPS.map((group) => `${group.id}:${group.airports.join(",")}`).join(";"),
   ...AIRPORT_GATEWAYS.map((gateway) =>
     `${gateway.id}:${gateway.airports.map((a) => {

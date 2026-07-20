@@ -16,6 +16,26 @@ on:
           - catalogue
           - flights
           - dry-run
+      flight_origins:
+        description: Which departure markets should a manual flight run refresh?
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - nl+uk
+          - nl
+          - uk
+          - ch
+      flight_provider:
+        description: Provider policy for a manual flight run
+        required: true
+        default: auto
+        type: choice
+        options:
+          - auto
+          - apify
+          - serpapi
 
 permissions:
   contents: write
@@ -42,6 +62,9 @@ jobs:
       APIFY_KEY_2: ${{ secrets.APIFY_KEY_2 }}
       APIFY_KEY_3: ${{ secrets.APIFY_KEY_3 }}
       APIFY_KEY_4: ${{ secrets.APIFY_KEY_4 }}
+      APIFY_KEY_5: ${{ secrets.APIFY_KEY_5 }}
+      FLIGHT_ORIGIN_GROUPS: ${{ inputs.flight_origins == 'nl+uk' && 'nl,uk' || inputs.flight_origins == 'all' && '' || inputs.flight_origins }}
+      FLIGHT_PROVIDER: ${{ inputs.flight_provider == 'auto' && '' || inputs.flight_provider }}
       SCRAPE_DIAGNOSTICS_DIR: .scrape-diagnostics
     steps:
       - uses: actions/checkout@v7
@@ -85,8 +108,8 @@ jobs:
         continue-on-error: true
         shell: bash
         run: |
-          if test -z "$APIFY_KEY_1$APIFY_KEY_2$APIFY_KEY_3$APIFY_KEY_4$SERPAPI_KEY"; then
-            echo "::warning title=Flights skipped::No flight provider configured (APIFY_KEY_1..4 or SERPAPI_KEY) in repository Actions secrets. Catalogue data will still be refreshed."
+          if test -z "$APIFY_KEY_1$APIFY_KEY_2$APIFY_KEY_3$APIFY_KEY_4$APIFY_KEY_5$SERPAPI_KEY"; then
+            echo "::warning title=Flights skipped::No flight provider configured (APIFY_KEY_1..5 or SERPAPI_KEY) in repository Actions secrets. Catalogue data will still be refreshed."
             echo "status=skipped (no provider configured)" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -117,6 +140,13 @@ jobs:
           npm run export:static
           npm run verify:static
           npm run validate:airports
+
+      - name: Require complete current flight coverage
+        if: >-
+          env.OPERATION != 'dry-run' &&
+          (env.OPERATION == 'flights' || env.OPERATION == 'both') &&
+          (steps.flights.outputs.status == 'success' || steps.flights.outputs.status == 'fresh')
+        run: npm run validate:flights
 
       - name: Test and lint
         if: env.OPERATION != 'dry-run'
@@ -164,6 +194,7 @@ jobs:
             .scrape-diagnostics/
             .scrape-summary.json
             .flight-summary.json
+            .flight-coverage.json
           retention-days: 14
           if-no-files-found: ignore
 
@@ -191,7 +222,10 @@ jobs:
             jq -r '"- Listings: \(.listings)\n- Last scrape: \(.lastScrapedAt)\n- Last flight check: \(.lastFlightsRefreshAt)\n- Flight quota: apify \(.flightQuota.apify.used)/\(.flightQuota.apify.limit), serpapi \(.flightQuota.serpapi.used)/\(.flightQuota.serpapi.limit)\n- Unknown category groups: \(.unknownCategoryGroups)"' .refresh-summary.json >> "$GITHUB_STEP_SUMMARY"
           fi
           if test -f .flight-summary.json; then
-            jq -r '"- Flight refresh: \(.status // "failed")\n- Flight modes: \(.modesCompleted // 0)/\(.modesDue // 0) completed\n- Flight cells: \(.cellsStored // 0)/\(.cellsDue // 0) stored (\(.cellsUnpriced // 0) searched with no viable price, \(.unresolvedCells // 0) unresolved)\n- Provider searches: \(.searched // 0) total, \(.broadSearches // 0) broad, \(.targetedRetries // 0) targeted retries\n- Return cache: \(.returnCacheHits // 0) date-pair hits, \(.returnCellsReused // 0) cells reused\n- Failures: \(.failed // 0)"' .flight-summary.json >> "$GITHUB_STEP_SUMMARY"
+            jq -r '"- Flight refresh: \(.status // "failed")\n- Flight modes: \(.modesCompleted // 0)/\(.modesDue // 0) completed\n- Flight cells: \(.cellsStored // 0)/\(.cellsDue // 0) stored (\(.cellsUnpriced // 0) searched with no viable price, \(.unresolvedCells // 0) unresolved)\n- Provider searches: \(.searched // 0) successful, \(.providerAttempts // 0) attempted, \(.providerFallbacks // 0) fallbacks, \(.broadSearches // 0) broad, \(.targetedRetries // 0) targeted retries\n- Return cache: \(.returnCacheHits // 0) date-pair hits, \(.returnCellsReused // 0) cells reused\n- Failures: \(.failed // 0) logical, \(.providerAttemptFailures // 0) provider attempts"' .flight-summary.json >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if test -f .flight-coverage.json; then
+            jq -r '"- Current flight coverage: \(.current)/\(.expected) cells (\(.priced) priced, \(.searchedUnpriced) no viable result, \(.missing) missing)\n- Flight quality flags: \(.invalidDateCells) invalid-date, \(.excessiveStopCells) excessive-stop, \(.sparseCandidateCells) sparse-candidate cells"' .flight-coverage.json >> "$GITHUB_STEP_SUMMARY"
           fi
           echo "- Flight step: ${{ steps.flights.outputs.status || steps.flights.outcome }}" >> "$GITHUB_STEP_SUMMARY"
           if test -n "${{ steps.deployment.outputs.page_url }}"; then echo "- Site: ${{ steps.deployment.outputs.page_url }}" >> "$GITHUB_STEP_SUMMARY"; fi

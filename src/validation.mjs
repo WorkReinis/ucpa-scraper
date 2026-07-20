@@ -51,7 +51,7 @@ export function detailIssues(details) {
 
 /** Shape check for one nested flight_quotes cell. A null cell has never been
  * quoted. A present cell with price null is also valid: the provider search
- * completed but no viable round-trip fare or return schedule was available. */
+ * completed but no viable outbound/return pair was available. */
 export function flightQuoteIssues(quote) {
   if (quote == null) return [];
   const issues = [];

@@ -4,6 +4,8 @@ import {
   collectKeys, pickFullest, pooledRemaining, mask,
 } from "../src/providers/apify-keys.mjs";
 import { configuredProviders } from "../src/providers/index.mjs";
+import { buildApifyInput } from "../src/providers/apify.mjs";
+import { buildSerpApiParams } from "../src/providers/serpapi.mjs";
 
 test("key inventory dedupes identical tokens and keeps alias names", () => {
   const { unique, total } = collectKeys({
@@ -48,4 +50,26 @@ test("FLIGHT_PROVIDER forces a single provider only when it is configured", () =
   // silently falling back to the other one.
   assert.deepEqual(configuredProviders({ APIFY_KEY_1: "t", FLIGHT_PROVIDER: "serpapi" }), []);
   assert.deepEqual(configuredProviders({ SERPAPI_KEY: "s", FLIGHT_PROVIDER: "apify" }), []);
+});
+
+test("both flight providers use the NL market and allow at most one stop", () => {
+  const options = {
+    originIds: "AMS,RTM", destIds: "GVA,LYS",
+    outboundDate: "2026-12-05", returnDate: "2026-12-12", apiKey: "secret",
+  };
+  const apify = buildApifyInput(options);
+  assert.equal(apify.gl, "nl");
+  assert.equal(apify.max_stops, 1);
+  assert.equal(apify.fetch_booking_options, false);
+  assert.equal(apify.max_pages, 1);
+  const serp = buildSerpApiParams(options);
+  assert.equal(serp.get("gl"), "nl");
+  assert.equal(serp.get("stops"), "2");
+
+  const deepApify = buildApifyInput({ ...options, exhaustive: true });
+  assert.equal(deepApify.max_pages, 2);
+  const deepSerp = buildSerpApiParams({ ...options, exhaustive: true });
+  assert.equal(deepSerp.get("show_hidden"), "true");
+  assert.equal(deepSerp.get("deep_search"), "true");
+  assert.equal(deepSerp.get("sort_by"), "2");
 });

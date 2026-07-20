@@ -120,7 +120,7 @@ $env:VITE_STATIC_DATA="1"; npm run build --prefix web
 
 ### Flight prices
 
-Ticket prices combine the UCPA package with the cheapest round-trip flight
+Ticket prices combine the UCPA package with the cheapest viable flight pair
 for the origin selected in the UI — Netherlands (AMS/RTM), London
 (LHR/LGW/LTN/STN/LCY), or Basel (BSL) — to the resort's validated gateway
 airports. By default the flight lands on the package's own start date
@@ -137,7 +137,8 @@ with [SerpApi](https://serpapi.com) as automatic fallback. Put keys in
 
 ```
 APIFY_KEY_1=your-apify-token
-APIFY_KEY_2=...            # optional extra accounts
+APIFY_KEY_2=...            # optional extra accounts; any APIFY_KEY_* is discovered locally
+APIFY_KEY_5=...            # the hosted workflow currently exposes keys 1 through 5
 SERPAPI_KEY=your-key-here  # optional fallback
 ```
 
@@ -148,34 +149,50 @@ spending any.
 Run `npm run flights` locally for a manual refresh. Hosted refreshes run from
 the scheduled workflow; there are no public scrape or flight buttons.
 
-Each arrival mode uses a genuine round-trip search, whose total is the
-authoritative card price. A shared return one-way search supplies a
-shuttle-compatible return schedule without contributing its one-way price.
-Those schedules have their own 14-day cache, so a cold full season is about
-105 base searches while normal fare-only cycles are about 70. Each date pair
+Each arrival mode uses an outbound one-way search, and one shared return
+one-way search supplies the shuttle-compatible return. The two prices are
+added and stored as `separate`, so the card's schedule and total always refer
+to the same two independently bookable tickets—even when the airlines or
+airports differ. This avoids attaching an unrelated return to a round-trip
+fare: the Apify actor returns Google departure tokens but cannot perform the
+required follow-up request. Return rows use the same six-day freshness as
+outbound fares. A full season is therefore about 105 base searches. Each date pair
 queries only airports serving packages on those dates. If Google omits one
-origin x resort-gateway cell, one narrow retry searches exactly that cell
-before the result is accepted. Responses are partitioned into per-(origin,
-gateway) cheapest quotes, and every product sharing that week shares them. A future
-mixed-carrier, separately booked strategy may sum two one-ways, but it must be
-stored and labelled as `separate`; it is never substituted for a round-trip
-fare implicitly.
+origin x resort-gateway cell—or returns candidates but none survive the
+date, stop, and transfer-window filters—one deeper retry searches exactly
+that cell. Apify reads a second results page; SerpApi enables hidden/deep
+price-sorted results. The same feasibility rules are applied again, then the
+cheapest surviving itinerary is used. Every product sharing that week shares
+the resulting quote.
 
-Flights are only counted when the resort shuttle is catchable: transfer
+Searches use the Netherlands Google market, EUR prices, and at most one
+connection. An outbound is rejected when it departs or arrives after the
+searched calendar day, preventing an overnight itinerary from masquerading
+as a valid same-day or early-arrival flight. Candidate and rejection counts
+are stored with every quote so sparse broad-search results remain auditable.
+
+Flights are only counted when their times fit the estimated resort-transfer
 durations per (gateway, airport) map through shared bands
 (`src/airports.mjs` `TRANSFER_BANDS`) to a latest viable landing time
 (21:00 for ≤1.5 h transfers down to an 18:30 floor) and an earliest viable
-return departure (10:00 up to 12:30). Editing a duration or the band policy
-re-quotes automatically on the next refresh.
+return departure (10:00 up to 12:30). Availability of a transfer service is
+assumed; no provider/day-of-week timetable is enforced. Editing a duration or
+the band policy re-quotes automatically on the next refresh.
 
 Quotes are append-only in `flight_price` (price history for free, like
-everything else here); shared return schedules live in
-`flight_return_schedule`. A quote stays fresh for six calendar days and a
-return schedule for 14. The ledger
-permits two attempts per date pair in that rolling window and enforces a
-monthly ceiling per provider (450 Apify runs, 225 SerpApi searches).
+everything else here); shared return fares and schedules live in
+`flight_return_schedule`. Both halves stay fresh for six calendar days. The ledger
+permits two failed attempts per actual provider-search key (including shared
+return searches) in that rolling window and enforces a monthly ceiling per
+provider (450 Apify runs, 225 SerpApi searches). Every fallback attempt gets
+its own ledger row under the provider that was actually called.
 Without a current quote, the ticket keeps its package price and links to a
 manual Google Flights search.
+
+`npm run validate:airports` reports current-policy coverage without failing
+an ordinary catalogue-only deploy. `npm run validate:flights` is the strict
+post-refresh gate: every expected current cell must exist and no stored
+itinerary may cross the outbound date or exceed the stop policy.
 
 ## Why the schema looks like that
 

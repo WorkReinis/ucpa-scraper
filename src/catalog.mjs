@@ -202,8 +202,21 @@ export function getFiltersData(db, { flightsConfigured = false } = {}) {
     "SELECT COUNT(*) n FROM flight_search WHERE billing_month = strftime('%Y-%m', 'now') AND provider = ?"
   ).get(provider).n;
   const quotaFor = (provider, limit) => {
-    const used = attemptedThisMonth(provider);
-    return { limit, used, remaining: Math.max(limit - used, 0) };
+    const recordedUsed = attemptedThisMonth(provider);
+    const externallyExhausted = provider === "serpapi" && Boolean(db.prepare(
+      `SELECT 1 FROM flight_search
+       WHERE billing_month = strftime('%Y-%m', 'now')
+         AND provider = 'serpapi' AND status = 'failed'
+         AND lower(COALESCE(error, '')) LIKE '%run out of searches%'
+       LIMIT 1`
+    ).get());
+    const used = externallyExhausted ? limit : recordedUsed;
+    return {
+      limit,
+      used,
+      remaining: Math.max(limit - used, 0),
+      ...(externallyExhausted ? { exhausted: true, recordedUsed } : {}),
+    };
   };
   const priceRangeRow = db.prepare(
     "SELECT MIN(price) min, MAX(price) max FROM v_week_current WHERE seats_left > 0"

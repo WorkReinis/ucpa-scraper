@@ -91,7 +91,7 @@ export default function TicketWeekListing({ d, includeFlightCosts = false, early
   // viable. Only the last one earns the specific message; the first two
   // are indistinguishable from "we haven't properly checked yet".
   const flightUnavailableCopy = d.flight_fetched_at != null && d.flight_details_scope === "both"
-    ? "No flight fits the resort shuttle"
+    ? "No flight fits the transfer window"
     : "Flight price unavailable";
   const soldOut = Number(d.seats_left) <= 0;
   const totalPrice = d.price + (hasFlight ? d.flight_price : 0);

@@ -13,7 +13,7 @@
 import {
   collectKeys, inspectKey, pickFullest, pooledRemaining, mask,
 } from "./providers/apify-keys.mjs";
-import { ACTOR_ID, apifyApi, runApifyActor } from "./providers/apify.mjs";
+import { ACTOR_ID, apifyApi, buildApifyInput, runApifyActor } from "./providers/apify.mjs";
 import { ORIGIN_AIRPORTS, DEST_AIRPORTS } from "./airports.mjs";
 
 // A real winter week inside Google's ~11-month booking horizon, matching the
@@ -143,18 +143,12 @@ async function main() {
   const combos = origins.split(",").length * dests.split(",").length;
   console.log(`route matrix: ${origins.split(",").length} origins x ${dests.split(",").length} dests = ${combos} combos`);
 
-  const input = {
-    departure_id: origins,
-    arrival_id: dests,
-    outbound_date: argValue("--outbound", DEFAULT_OUTBOUND),
-    return_date: argValue("--return", DEFAULT_RETURN),
-    currency: "EUR",
-    hl: "en",
-    // Each resolved booking URL bills as a separate event and one search
-    // returns 80-120 of them. We only need the cheapest price. Keep this off.
-    fetch_booking_options: false,
-    max_pages: 1,
-  };
+  const input = buildApifyInput({
+    originIds: origins,
+    destIds: dests,
+    outboundDate: argValue("--outbound", DEFAULT_OUTBOUND),
+    returnDate: argValue("--return", DEFAULT_RETURN),
+  });
   console.log(`\nactor input:\n${JSON.stringify(input, null, 2)}`);
 
   const before = chosen.remainingUsd;

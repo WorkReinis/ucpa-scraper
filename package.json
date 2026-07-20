@@ -12,6 +12,7 @@
     "export:static": "node src/export-static.mjs",
     "verify:static": "node src/verify-static.mjs",
     "validate:airports": "node src/validate-airports.mjs",
+    "validate:flights": "node src/validate-airports.mjs --require-current-flight-coverage",
     "test": "node --test",
     "data:init": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/init-data-branch.ps1",
     "report": "node src/report.mjs",
