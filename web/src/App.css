@@ -235,6 +235,151 @@
   .changelog-counts { justify-content: flex-start; }
 }
 
+/* --- mobile filter trigger + bottom sheet --- */
+
+/* Hidden until phone widths (revealed in the <=720 block). One inert button in
+   the toolbar is the only DOM this adds on desktop/tablet; the sheet returns
+   null unless opened, which can't happen without the trigger. */
+.filters-trigger {
+  display: none;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg-card);
+  color: var(--text-h);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+.filters-trigger:hover { border-color: var(--accent-border); }
+.filters-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.filters-trigger-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.filter-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: flex-end;
+  background: rgba(14, 22, 36, 0.34);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  animation: changelog-fade 0.18s ease-out;
+}
+.filter-sheet {
+  width: 100%;
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-card);
+  border-radius: var(--radius) var(--radius) 0 0;
+  box-shadow: 0 -24px 70px rgba(15, 24, 40, 0.28);
+  animation: filter-sheet-in 0.26s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes filter-sheet-in { from { transform: translateY(100%); } }
+
+.filter-sheet-grab {
+  width: 38px;
+  height: 4px;
+  margin: 9px auto 0;
+  border-radius: 999px;
+  background: var(--border);
+}
+.filter-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 18px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.filter-sheet-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 650;
+  color: var(--text-h);
+}
+.filter-sheet-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.filter-sheet-body {
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 4px 18px 14px;
+}
+
+/* The panel inside the sheet sheds its sidebar chrome and uses the full
+   vertical layout (the rail rules above are scoped to .app-body). */
+.filter-sheet .filter-panel {
+  position: static;
+  top: auto;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.filter-sheet .filter-panel h2 { display: none; }
+/* Keep the "Flying from" segmented control comfortable even at <=560, where
+   the global seg-button rule otherwise shrinks it to toolbar size. */
+.filter-sheet .seg-control-block { min-height: 34px; }
+.filter-sheet .seg-control-block .seg-button { height: 30px; padding-inline: 12px; font-size: 12px; }
+
+.filter-sheet-foot {
+  display: flex;
+  gap: 10px;
+  padding: 12px 18px calc(14px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border);
+}
+.filter-sheet-clear,
+.filter-sheet-apply {
+  flex: 1;
+  height: 42px;
+  border-radius: 11px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.filter-sheet-clear { border: 1px solid var(--border); background: var(--bg-card); color: var(--text-h); }
+.filter-sheet-clear:hover { background: var(--bg); }
+.filter-sheet-apply { border: 1px solid var(--accent); background: var(--accent); color: #fff; }
+.filter-sheet-apply:hover { filter: brightness(1.03); }
+
 .scrape-controls {
   display: flex;
   align-items: center;
@@ -1150,7 +1295,9 @@
   .active-filters,
   .chip-pill,
   .skeleton-card,
-  .fav-button.pulse {
+  .fav-button.pulse,
+  .filter-sheet-backdrop,
+  .filter-sheet {
     animation: none !important;
     transition: none !important;
   }
@@ -1370,9 +1517,13 @@
 
 /* Once the sidebar drops above the results, keep filters as a compact rail
    on both tablets and phones instead of spending a full screen on them. */
+/* Every filter selector here is scoped to `.app-body` on purpose: the rail is
+   the tablet treatment of the in-body sidebar only. The same FilterPanel is
+   also rendered inside the phone bottom sheet (outside .app-body), and there it
+   must keep its full vertical desktop layout, not collapse into a rail. */
 @media (max-width: 1180px) {
   .results-toolbar { top: 8px; }
-  .filter-panel {
+  .app-body > .filter-panel {
     position: static;
     top: auto;
     display: flex;
@@ -1384,10 +1535,10 @@
     border-radius: 14px;
     scrollbar-width: none;
   }
-  .filter-panel::-webkit-scrollbar { display: none; }
-  .filter-panel h2 { display: none; }
-  .filter-group { flex: 0 0 auto; border-top: 0; }
-  .filter-group-header {
+  .app-body > .filter-panel::-webkit-scrollbar { display: none; }
+  .app-body > .filter-panel h2 { display: none; }
+  .app-body .filter-group { flex: 0 0 auto; border-top: 0; }
+  .app-body .filter-group-header {
     width: auto;
     min-height: 32px;
     gap: 8px;
@@ -1397,7 +1548,7 @@
     background: var(--seg-bg);
     white-space: nowrap;
   }
-  .filter-group-content {
+  .app-body .filter-group-content {
     width: 224px;
     max-height: 230px;
     margin-top: 7px;
@@ -1408,23 +1559,23 @@
     border-radius: 10px;
     background: var(--bg-card);
   }
-  .filter-group-fit-content .filter-group-content {
+  .app-body .filter-group-fit-content .filter-group-content {
     width: 136px;
     max-width: min(224px, calc(100vw - 30px));
   }
   /* On the rail the switches sit side by side like every other rail item;
      stacked, they'd stretch the whole rail's height. */
-  .filter-panel-switches { flex: 0 0 auto; flex-direction: row; gap: 7px; border-top: 0; padding-top: 0; }
-  .switch-row { min-height: 32px; gap: 10px; padding: 0 8px; white-space: nowrap; }
-  .switch { transform: scale(0.82); transform-origin: right center; }
+  .app-body .filter-panel-switches { flex: 0 0 auto; flex-direction: row; gap: 7px; border-top: 0; padding-top: 0; }
+  .app-body .switch-row { min-height: 32px; gap: 10px; padding: 0 8px; white-space: nowrap; }
+  .app-body .switch { transform: scale(0.82); transform-origin: right center; }
 
   /* "Flying from" on the rail: no room for a heading, so the segmented
      control itself becomes the rail item -- same 32px pill height and
      seg-control language the sort toolbar already uses. The Netherlands /
      London / Basel labels carry the meaning on their own. */
-  .filter-group-title-static { display: none; }
-  .seg-control-block { min-height: 32px; margin-bottom: 0; padding: 2px; }
-  .seg-control-block .seg-button { height: 26px; padding-inline: 10px; }
+  .app-body .filter-group-title-static { display: none; }
+  .app-body .seg-control-block { min-height: 32px; margin-bottom: 0; padding: 2px; }
+  .app-body .seg-control-block .seg-button { height: 26px; padding-inline: 10px; }
 }
 
 /* Portrait-tablet ticket: retain the horizontal stub silhouette, but give
@@ -1458,6 +1609,10 @@
   .brand-tagline { margin-top: 1px; font-size: 9px; }
   .app { padding: 12px 12px 48px; }
   .app-body { gap: 10px; }
+  /* Phones: drop the clipped horizontal rail entirely; filter controls now
+     live in the bottom sheet opened from the toolbar's Filters button. */
+  .app-body > .filter-panel { display: none; }
+  .filters-trigger { display: inline-flex; }
 
   .results-toolbar { padding: 8px 9px; }
   .app-footer-row { grid-template-columns: 1fr; gap: 16px; padding: 20px 14px; }
@@ -1542,8 +1697,35 @@
   .seg-button { height: 25px; padding-inline: 8px; font-size: 10px; }
   .seg-control-block { min-height: 29px; }
   .seg-control-block .seg-button { height: 25px; padding-inline: 8px; }
-  .active-filters { flex-wrap: nowrap; margin-bottom: 10px; overflow-x: auto; scrollbar-width: none; }
+  /* Single-line feedback strip that bleeds to the screen edge (cancels the
+     .app 12px padding), so an overflowing last chip is visibly cut off -- the
+     cue that there's more to swipe -- while a short row never clips. */
+  .active-filters {
+    flex-wrap: nowrap;
+    width: auto;
+    max-width: none;
+    margin-inline: -12px;
+    padding-inline: 12px;
+    margin-bottom: 10px;
+    gap: 8px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    scroll-padding-inline: 12px;
+  }
   .active-filters::-webkit-scrollbar { display: none; }
+  /* The fix: chips must not shrink (which forced their labels onto a second
+     line the 28px height then clipped) and their labels must not wrap. */
+  .active-filters-label,
+  .chip-pill,
+  .clear-all-button { flex-shrink: 0; }
+  .chip-pill { white-space: nowrap; height: 34px; padding: 0 8px 0 12px; border-radius: 10px; }
+  .chip-pill-close { width: 20px; height: 20px; border-radius: 6px; }
+  .clear-all-button { height: 34px; }
+  /* Chips carry their own group eyebrows (RESORT, MONTH...), so the leading
+     "Active" label just wastes room in the strip. */
+  .active-filters-label { display: none; }
 }
 
 @media (max-width: 480px) {

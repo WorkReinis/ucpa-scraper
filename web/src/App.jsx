@@ -5,6 +5,7 @@ import ActiveFilters from "./components/ActiveFilters";
 import WeekListing from "./components/WeekListing";
 import TicketWeekListing from "./components/TicketWeekListing";
 import ChangelogPanel from "./components/ChangelogPanel";
+import FilterSheet from "./components/FilterSheet";
 import useFavorites from "./useFavorites";
 import { filterFavoriteWeeks, resolveFlightQuote, sortCatalogForDisplay } from "./staticCatalog";
 import { IconLayoutCompact, IconLayoutDetailed, IconPlane, IconSearch, IconTicket } from "./icons";
@@ -124,6 +125,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showChangelog, setShowChangelog] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
   const requestId = useRef(0);
 
   useEffect(() => {
@@ -185,6 +187,18 @@ export default function App() {
   const showSkeleton = loading && weeks.length === 0;
   const showEmpty = !loading && favFilteredWeeks.length === 0;
   const filtersActive = hasActiveFilters(filters, favOnly);
+  // Matches the chip count ActiveFilters renders: one per selected value, plus
+  // one each for a set price range, early arrival, and the favorites view.
+  const activeFilterCount =
+    filters.resort.length +
+    filters.activity.length +
+    filters.tier.length +
+    filters.instructionType.length +
+    filters.month.length +
+    filters.ageGroup.length +
+    (filters.minPrice || filters.maxPrice ? 1 : 0) +
+    (filters.earlyArrival ? 1 : 0) +
+    (favOnly ? 1 : 0);
   const refreshSchedule = meta?.refreshSchedule ?? {
     time: "07:15",
     timeZone: "Europe/Riga",
@@ -278,6 +292,11 @@ export default function App() {
                 </div>
               </div>
               <div className="toolbar-controls">
+                {/* Phone-only: filter controls live in a bottom sheet instead
+                    of the sidebar/rail. Hidden by CSS above 720px. */}
+                <button type="button" className="filters-trigger" onClick={() => setShowFilters(true)}>
+                  Filters{activeFilterCount > 0 && <span className="filters-trigger-count">{activeFilterCount}</span>}
+                </button>
                 {cardView === "standard" && <div className="seg-control seg-control-icons">
                   <button type="button" className={`seg-icon-button${layout === "compact" ? " active" : ""}`} onClick={() => setLayout("compact")} title="Compact rows">
                     {IconLayoutCompact}
@@ -396,6 +415,28 @@ export default function App() {
         onClose={() => setShowChangelog(false)}
         days={meta?.changelog ?? []}
       />
+
+      <FilterSheet
+        open={showFilters}
+        onClose={() => setShowFilters(false)}
+        count={activeFilterCount}
+        resultCount={favFilteredWeeks.length}
+        onClearAll={handleClearAll}
+      >
+        {meta && (
+          <FilterPanel
+            meta={meta}
+            value={filters}
+            onChange={setFilters}
+            includeFlightCosts={includeFlightCosts}
+            onIncludeFlightCostsChange={setIncludeFlightCosts}
+            showFlightToggle={SHOW_FLIGHT_COST_TOGGLE}
+            favOnly={favOnly}
+            onFavOnlyChange={setFavOnly}
+            favCount={favorites.length}
+          />
+        )}
+      </FilterSheet>
 
     </div>
   );
