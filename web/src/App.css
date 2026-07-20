@@ -1353,18 +1353,9 @@
 .ticket-details-clip { min-height: 0; overflow: hidden; }
 .ticket-details-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 0; padding: 6px 24px 20px; }
 .ticket-detail-column { opacity: 0; transform: translateY(8px); transition: opacity 0.3s ease, transform 0.3s ease; }
-.ticket-detail-column { position: relative; min-width: 0; padding: 0 20px; }
+.ticket-detail-column { min-width: 0; padding: 0 20px; }
 .ticket-detail-column:first-child { padding-left: 0; }
 .ticket-detail-column:last-child { padding-right: 0; }
-.ticket-detail-column + .ticket-detail-column::before {
-  content: "";
-  position: absolute;
-  top: 8px;
-  bottom: 8px;
-  left: 0;
-  width: 1px;
-  background: var(--ticket-hairline);
-}
 .ticket-week-card.open .ticket-detail-column { opacity: 1; transform: none; }
 .ticket-week-card.open .ticket-detail-column:nth-child(1) { transition-delay: 0s; }
 .ticket-week-card.open .ticket-detail-column:nth-child(2) { transition-delay: 0.05s; }
@@ -1454,7 +1445,6 @@
   .ticket-details-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .ticket-detail-column { padding: 0 16px; }
   .ticket-detail-column:nth-child(odd) { padding-left: 0; }
-  .ticket-detail-column:nth-child(odd)::before { display: none; }
   .ticket-detail-column:nth-child(even) { padding-right: 0; }
   .ticket-detail-column:last-child:nth-child(odd) { grid-column: 1 / -1; padding-right: 0; }
   .ticket-detail-column:nth-child(n + 3) { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--ticket-hairline); }
@@ -1537,7 +1527,6 @@
   .ticket-details-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0; padding: 5px 14px 16px; }
   .ticket-detail-column { padding: 0 12px; }
   .ticket-detail-column:nth-child(odd) { padding-left: 0; }
-  .ticket-detail-column:nth-child(odd)::before { display: none; }
   .ticket-detail-column:nth-child(even) { padding-right: 0; }
   .ticket-detail-column:last-child:nth-child(odd) { grid-column: 1 / -1; padding-right: 0; }
   .ticket-detail-column:nth-child(n + 3) { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--ticket-hairline); }
@@ -1562,7 +1551,6 @@
   .ticket-detail-column,
   .ticket-detail-column:nth-child(odd),
   .ticket-detail-column:nth-child(even) { margin-top: 0; padding: 11px 0; border-top: 0; }
-  .ticket-detail-column::before { display: none; }
   .ticket-detail-column:first-child { padding-top: 0; }
   .ticket-detail-column:last-child { padding-bottom: 0; }
   .ticket-detail-column + .ticket-detail-column { border-top: 1px solid var(--ticket-hairline); }
