@@ -1456,13 +1456,18 @@
   .refresh-tracker:nth-of-type(2), .footer-brand { grid-column: 1; }
   .footer-brand { justify-content: flex-start; text-align: left; }
   .ticket-week-card { border-radius: 15px; }
-  .ticket-main { display: block; height: auto; }
-  .ticket-image-wrap { height: 102px; min-height: 0; }
-  .activity-artwork-portrait { display: none; }
-  .activity-artwork-landscape { display: block; }
-  .ticket-perf-v { height: 1px; background: repeating-linear-gradient(90deg, var(--ticket-hairline) 0 5px, transparent 5px 11px); }
-  .ticket-notch-top { top: 50%; left: -8px; transform: translateY(-50%); }
-  .ticket-notch-end { display: block; top: 50%; right: -8px; transform: translateY(-50%); }
+  /* Keep the artwork beside the trip information on phones. The markup and
+     every field are shared with the desktop ticket; only the grid changes. */
+  .ticket-main {
+    display: grid;
+    grid-template-columns: 96px minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+    height: 194px;
+  }
+  .ticket-image-wrap { grid-row: 1 / -1; min-height: 0; height: auto; }
+  .activity-artwork-portrait { display: block; }
+  .activity-artwork-landscape { display: none; }
+  .ticket-perf-image, .ticket-main > .ticket-perf-v { display: none; }
   .ticket-trip { padding: 13px 14px 12px; }
   .ticket-eyebrow-row { gap: 6px; }
   .ticket-eyebrow {
@@ -1489,7 +1494,15 @@
   .ticket-label { font-size: 8px; letter-spacing: 0.06em; }
   .ticket-value { overflow: hidden; margin-top: 2px; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 
-  .ticket-stub { flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; min-height: 64px; padding: 11px 14px; }
+  .ticket-stub {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 64px;
+    padding: 11px 14px;
+    border-top: 1px dashed var(--ticket-hairline);
+  }
   .ticket-price { font-size: 21px; }
   .ticket-price-breakdown { max-width: 190px; margin-top: 2px; font-size: 9px; }
   .ticket-seat-block { margin-top: 0; padding-top: 0; text-align: right; }
