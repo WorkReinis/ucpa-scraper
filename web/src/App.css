@@ -1692,7 +1692,11 @@
 @media (max-width: 560px) {
   .results-toolbar { align-items: center; flex-direction: row; gap: 8px; }
   .results-toolbar-left { flex: 0 0 auto; width: auto; }
-  .toolbar-controls { min-width: 0; width: auto; margin-left: auto; overflow-x: auto; }
+  /* Drop "listings" so the count ("20 of 504") leaves room for the Filters
+     trigger + sort control on one line instead of a cramped scroll strip. */
+  .count-unit { display: none; }
+  .toolbar-controls { min-width: 0; width: auto; margin-left: auto; overflow-x: auto; scrollbar-width: none; }
+  .toolbar-controls::-webkit-scrollbar { display: none; }
   .seg-control { padding: 2px; }
   .seg-button { height: 25px; padding-inline: 8px; font-size: 10px; }
   .seg-control-block { min-height: 29px; }

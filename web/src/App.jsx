@@ -288,7 +288,9 @@ export default function App() {
                   <button type="button" role="tab" aria-selected={cardView === "ticket"} className={cardView === "ticket" ? "active" : ""} onClick={() => setCardView("ticket")}>Tickets</button>
                 </div>}
                 <div className="muted small">
-                  {meta ? `${displayedWeeks.length} of ${favFilteredWeeks.length} listings` : "Loading…"}
+                  {meta
+                    ? <>{displayedWeeks.length} of {favFilteredWeeks.length}<span className="count-unit"> listings</span></>
+                    : "Loading…"}
                 </div>
               </div>
               <div className="toolbar-controls">
