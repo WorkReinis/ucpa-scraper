@@ -62,9 +62,9 @@ export default function ChangelogPanel({ open, onClose, days = [] }) {
                   <span>{day.productCount} products checked</span>
                 </div>
                 <div className="changelog-counts" aria-label={`${day.summary.total} changes`}>
-                  {day.summary.newListings > 0 && <span className="change-count change-count-new">+{day.summary.newListings} new</span>}
-                  {day.summary.priceChanges > 0 && <span className="change-count">{day.summary.priceChanges} price</span>}
-                  {day.summary.availabilityChanges > 0 && <span className="change-count">{day.summary.availabilityChanges} seats</span>}
+                  {day.summary.newListings > 0 && <span className="change-count change-count-new">{day.summary.newListings} new</span>}
+                  {day.summary.priceChanges > 0 && <span className="change-count">{day.summary.priceChanges} price change{day.summary.priceChanges === 1 ? "" : "s"}</span>}
+                  {day.summary.availabilityChanges > 0 && <span className="change-count">{day.summary.availabilityChanges} availability change{day.summary.availabilityChanges === 1 ? "" : "s"}</span>}
                   {day.summary.total === 0 && <span className="change-count change-count-quiet">No changes</span>}
                 </div>
               </div>
