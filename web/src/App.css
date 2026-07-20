@@ -1511,11 +1511,13 @@
   .ticket-fav { top: 10px; left: 10px; }
 
   .ticket-foot-row { display: grid; grid-template-columns: 1fr; gap: 8px; min-height: 0; padding: 9px 12px 10px; }
-  .ticket-flight-summary { justify-content: flex-start; width: 100%; font-size: 9px; }
+  .ticket-flight-summary { justify-content: center; width: 100%; font-size: 9px; text-align: center; }
   .ticket-links { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; margin-left: 0; }
   .ticket-link-button { justify-content: center; min-width: 0; min-height: 27px; font-size: 10px; }
   .ticket-links .ticket-link-button:only-child { grid-column: 1 / -1; }
   .ticket-details-grid { grid-template-columns: 1fr; gap: 14px; padding: 5px 14px 16px; }
+  .ticket-detail-column p, .ticket-detail-column li { font-size: 11px; line-height: 1.4; }
+  .ticket-detail-column .ticket-dim { font-size: 10.5px !important; }
 }
 
 @media (max-width: 560px) {
