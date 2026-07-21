@@ -691,9 +691,20 @@ export async function runFlightRefresh({
               summary.failed++;
               summary.errors.push(error.message);
             }
-            throw new Error(
-              `${originGroup.id}/${gateway.id} ${direction} coverage retry failed: ${error.message}`
+            console.error(
+              `  ! ${originGroup.id}/${gateway.id} ${direction} coverage retry failed, ` +
+              `leaving just this cell unresolved rather than losing the whole leg: ${error.message}`
             );
+            // Only genuine "every provider is out" (set inside runSearch,
+            // regardless of whether this error is re-thrown) should stop
+            // spending on this leg -- an ordinary retry failure must not cost
+            // every OTHER cell here its own, independent chance to succeed.
+            // This one previously re-threw, which unwound the whole function
+            // before `return covered` -- discarding every cell already
+            // recovered earlier in this same loop, not just this one.
+            if (summary.quotaExhausted) return covered;
+            await delay(DELAY_MS);
+            continue;
           }
           await delay(DELAY_MS);
         }
@@ -751,9 +762,16 @@ export async function runFlightRefresh({
               summary.failed++;
               summary.errors.push(error.message);
             }
-            throw new Error(
-              `${originGroup.id}/${gateway.id} ${direction} thin-airport (${airport}) retry failed: ${error.message}`
+            console.error(
+              `  ! ${originGroup.id}/${gateway.id} ${direction} thin-airport (${airport}) retry failed, ` +
+              `keeping the existing cell price rather than losing the whole leg: ${error.message}`
             );
+            // Same reasoning as the first pass: only genuine cross-provider
+            // exhaustion should stop spending; this cell just keeps whatever
+            // price the broad search (or the first pass) already found.
+            if (summary.quotaExhausted) return covered;
+            await delay(DELAY_MS);
+            continue;
           }
           await delay(DELAY_MS);
         }

@@ -124,7 +124,13 @@ test("refresh recovers an origin market omitted by the broad flight matrix", asy
   db.close();
 });
 
-test("refresh reports partial coverage when a recovery search fails", async () => {
+test("one cell's failed recovery search doesn't cost every other cell in the same leg", async () => {
+  // Basel (ch) is entirely absent from the broad response and its own
+  // recovery search always fails -- nl and uk are fully healthy throughout.
+  // recoverMissingCoverage() used to re-throw on any single cell's retry
+  // failure, which unwound the whole function before `return covered`,
+  // discarding nl and uk's already-good prices along with Basel's. Fixed to
+  // catch per cell: only Basel ends up unresolved, nl/uk still get stored.
   const db = fixtureDb();
   let calls = 0;
   const searchProvider = async ({ originIds, destIds, outboundDate }) => {
@@ -155,18 +161,33 @@ test("refresh reports partial coverage when a recovery search fails", async () =
     providerNames: ["apify"],
     searchProvider,
     delay: async () => {},
+    // About leg-level failure isolation, not the separate
+    // thinnest-gateway-airport pass -- this fixture's LYS-only mock would
+    // otherwise also trip that unrelated check for CMF/GNB/GVA.
+    checkThinAirports: false,
   });
 
-  assert.equal(calls, 2);
+  // 3 broad searches (return, standard outbound, early outbound) + one
+  // Basel-only retry per leg, each of which fails and is isolated to
+  // Basel's own cell rather than aborting anything else.
+  assert.equal(calls, 6);
+  assert.equal(summary.failed, 3);
   assert.equal(summary.status, "partial");
-  assert.equal(summary.complete, false);
-  assert.equal(summary.failed, 1);
+  assert.equal(summary.complete, false); // failed > 0 keeps this honest, even though every cell got attempted
   assert.equal(summary.modesDue, 2);
-  assert.equal(summary.modesCompleted, 0);
+  assert.equal(summary.modesCompleted, 2); // neither leg aborted -- both ran to completion
   assert.equal(summary.cellsDue, 6);
-  assert.equal(summary.cellsStored, 0);
-  assert.equal(summary.cellsMissing, 6);
-  assert.match(summary.errors[0], /fixture provider failure/);
+  assert.equal(summary.cellsStored, 6); // every cell got a row, priced or not
+  assert.equal(summary.cellsUnpriced, 2); // exactly Basel's two modes
+  assert.equal(summary.cellsMissing, 0); // nothing was ever abandoned outright
+  assert.ok(summary.errors.every((error) => /fixture provider failure/.test(error)));
+
+  const rows = db.prepare(
+    "SELECT origin_group, price FROM v_flight_current ORDER BY origin_group, arrival_mode"
+  ).all();
+  assert.deepEqual(rows.filter((row) => row.origin_group === "nl").map((row) => row.price), [170, 170]);
+  assert.deepEqual(rows.filter((row) => row.origin_group === "uk").map((row) => row.price), [130, 130]);
+  assert.deepEqual(rows.filter((row) => row.origin_group === "ch").map((row) => row.price), [null, null]);
   db.close();
 });
 
