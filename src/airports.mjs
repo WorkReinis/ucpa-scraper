@@ -163,6 +163,26 @@ export function gatewayCaseSql(column) {
   return `(CASE ${column} ${clauses.join(" ")} ELSE NULL END)`;
 }
 
+/** True when airportColumn is on gatewayColumn's *current* allowed list --
+ *  the SQL twin of validateResortAirportAssignments' airport check. Lets a
+ *  view accept an older-fingerprint quote as still policy-compliant (its
+ *  config_key predates a tuning change, e.g. ZRH's cut, but its actual
+ *  airport was never affected) without matching config_key byte-for-byte. */
+export function gatewayAirportAllowedSql(gatewayColumn, airportColumn) {
+  const clauses = AIRPORT_GATEWAYS.map((gateway) =>
+    `WHEN '${gateway.id}' THEN (${airportColumn} IN (${gateway.airports.map((a) => `'${a}'`).join(",")}))`
+  );
+  return `(CASE ${gatewayColumn} ${clauses.join(" ")} ELSE 0 END)`;
+}
+
+/** Origin-side twin of gatewayAirportAllowedSql. */
+export function originGroupAirportAllowedSql(originGroupColumn, airportColumn) {
+  const clauses = ORIGIN_GROUPS.map((group) =>
+    `WHEN '${group.id}' THEN (${airportColumn} IN (${group.airports.map((a) => `'${a}'`).join(",")}))`
+  );
+  return `(CASE ${originGroupColumn} ${clauses.join(" ")} ELSE 0 END)`;
+}
+
 /** Departure-side twin of validateResortAirportAssignments: a quote's
  *  outbound must depart from -- and its return must land at -- an airport
  *  inside its own origin group, or a UK fare has bled into an NL cell. */

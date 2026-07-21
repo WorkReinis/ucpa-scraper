@@ -1,7 +1,19 @@
 import { DatabaseSync } from "node:sqlite";
-import { AIRPORT_CONFIG_KEY } from "./airports.mjs";
+import { AIRPORT_CONFIG_KEY, gatewayAirportAllowedSql, originGroupAirportAllowedSql } from "./airports.mjs";
 
 const SQL_AIRPORT_CONFIG_KEY = AIRPORT_CONFIG_KEY.replaceAll("'", "''");
+// A row fetched under an older config_key is still fully trustworthy when it
+// used the trusted separate-one-way methodology and every airport it touched
+// is still on today's allowed list -- only a tuning change (e.g. ZRH's cut),
+// not a methodology change, moved it off the exact-match branch above.
+const SQL_ROW_STILL_COMPLIANT = `(
+  f2.pricing_mode = 'separate'
+  AND f2.price IS NOT NULL AND f2.price_outbound IS NOT NULL AND f2.price_return IS NOT NULL
+  AND ${gatewayAirportAllowedSql("f2.gateway", "f2.arr_airport")}
+  AND ${gatewayAirportAllowedSql("f2.gateway", "f2.return_dep_airport")}
+  AND ${originGroupAirportAllowedSql("f2.origin_group", "f2.dep_airport")}
+  AND ${originGroupAirportAllowedSql("f2.origin_group", "f2.return_arr_airport")}
+)`;
 
 // ---------------------------------------------------------------------------
 // Schema design
@@ -307,13 +319,16 @@ SELECT
 FROM v_week_current w
 JOIN product p ON p.code = w.code;
 
--- Preferred flight quote per (gateway, origin group) cell and date pair. A
--- quote made by the current search policy always wins. While the new policy
--- is still filling its coverage, retain only the trustworthy historical
--- round-trip totals: legacy rows with no separately priced one-way halves.
--- This deliberately rejects the later, incorrect outbound + return sums.
--- New current-policy rows (including an authoritative no-result row) replace
--- the fallback cell by cell as soon as they are fetched.
+-- Preferred flight quote per (gateway, origin group) cell and date pair, in
+-- three tiers. Tier 0: a quote made under today's exact config_key always
+-- wins (including an authoritative no-result row, which correctly suppresses
+-- a stale fallback below). Tier 1: an older-fingerprint row still counts as
+-- current when it used the trusted separate-one-way methodology and every
+-- airport it touched remains on today's allowed list -- a tuning change
+-- (e.g. ZRH's cut) shouldn't orphan a quote it never actually affected. Tier
+-- 2, only when neither above exists: the trustworthy historical round-trip
+-- totals -- legacy rows with no separately priced one-way halves. This
+-- deliberately rejects the later, incorrect outbound + return sums.
 CREATE VIEW v_flight_current AS
 SELECT f.*
 FROM flight_price f
@@ -323,6 +338,7 @@ WHERE f.rowid = (
     AND f2.gateway = f.gateway AND f2.origin_group = f.origin_group
     AND (
       f2.config_key = '${SQL_AIRPORT_CONFIG_KEY}'
+      OR ${SQL_ROW_STILL_COMPLIANT}
       OR (
         f2.config_key = 'legacy'
         AND f2.details_scope = 'outbound'
@@ -332,7 +348,11 @@ WHERE f.rowid = (
       )
     )
   ORDER BY
-    CASE WHEN f2.config_key = '${SQL_AIRPORT_CONFIG_KEY}' THEN 0 ELSE 1 END,
+    CASE
+      WHEN f2.config_key = '${SQL_AIRPORT_CONFIG_KEY}' THEN 0
+      WHEN ${SQL_ROW_STILL_COMPLIANT} THEN 1
+      ELSE 2
+    END,
     f2.fetched_at DESC,
     f2.rowid DESC
   LIMIT 1

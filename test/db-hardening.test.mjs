@@ -121,6 +121,57 @@ test("current flight view keeps trusted round-trip fallbacks and rejects one-way
   db.close();
 });
 
+test("a tuning-stale config_key doesn't orphan a separate-priced quote whose airports are still allowed", () => {
+  const db = open(":memory:");
+  const insert = db.prepare(`
+    INSERT INTO flight_price (
+      origins, dests, gateway, origin_group, arrival_mode, provider, config_key,
+      outbound_date, return_date, fetched_at, price, price_outbound, price_return,
+      pricing_mode, details_scope, dep_airport, arr_airport, return_dep_airport, return_arr_airport
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  const common = ["AMS,RTM", "LYS,GVA,GNB,CMF", "northern-alps", "nl", "standard", "apify"];
+
+  // A worse but strictly-shaped legacy round-trip fallback -- the only thing
+  // that would show without the fix below.
+  insert.run(...common, "legacy", "2026-12-05", "2026-12-12", "2026-07-16T08:00:00Z", 206, null, null, "legacy", "outbound", null, null, null, null);
+
+  // A real, separately-priced quote fetched under an old config_key (from
+  // before a tuning change, e.g. ZRH's cut) -- using GVA, which was never
+  // affected and is still allowed today.
+  const staleButCompliant = "search:separate-one-way-pair-v5:...|northern-alps:CMF=2,GNB=2.25,GVA=3,LYS=3,ZRH=4.5|...";
+  insert.run(...common, staleButCompliant, "2026-12-05", "2026-12-12", "2026-07-20T13:00:00Z", 183, 117, 66, "separate", "both", "AMS", "GVA", "GVA", "AMS");
+
+  const row = db.prepare("SELECT price, config_key FROM v_flight_current").get();
+  assert.equal(row.price, 183, "the real, still-compliant quote should win over the worse legacy fallback");
+  assert.equal(row.config_key, staleButCompliant);
+  db.close();
+});
+
+test("a tuning-stale quote pinned to a since-retired airport stays orphaned, not promoted", () => {
+  const db = open(":memory:");
+  const insert = db.prepare(`
+    INSERT INTO flight_price (
+      origins, dests, gateway, origin_group, arrival_mode, provider, config_key,
+      outbound_date, return_date, fetched_at, price, price_outbound, price_return,
+      pricing_mode, details_scope, dep_airport, arr_airport, return_dep_airport, return_arr_airport
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  const common = ["LHR,LGW,LTN,STN,LCY", "LYS,GVA,GNB,CMF,ZRH", "northern-alps", "uk", "standard", "apify"];
+
+  const legacyKey = "search:separate-one-way-pair-v5:...|northern-alps:CMF=2,GNB=2.25,GVA=3,LYS=3,ZRH=4.5|...";
+  // Fetched before ZRH was cut, and it actually used ZRH -- still real and
+  // separately priced, but not something today's policy would produce.
+  insert.run(...common, legacyKey, "2026-12-05", "2026-12-12", "2026-07-20T13:00:00Z", 132, 69, 63, "separate", "both", "LGW", "ZRH", "ZRH", "LGW");
+  // A worse but genuinely policy-compliant round-trip fallback.
+  insert.run(...common, "legacy", "2026-12-05", "2026-12-12", "2026-07-19T16:00:00Z", 152, null, null, "legacy", "outbound", null, null, null, null);
+
+  const row = db.prepare("SELECT price, config_key FROM v_flight_current").get();
+  assert.equal(row.price, 152, "a since-retired airport must not be promoted even though it was separately priced");
+  assert.equal(row.config_key, "legacy");
+  db.close();
+});
+
 test("catalogue metadata can be rolled back with the rest of a rejected run", () => {
   const db = open(":memory:");
   db.exec("BEGIN");
