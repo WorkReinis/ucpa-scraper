@@ -1,5 +1,5 @@
 import { useId, useState } from "react";
-import { IconHeart, IconPlane, IconTicket } from "../icons";
+import { IconHeart, IconPlane, IconPeak } from "../icons";
 import ActivityArtwork from "./ActivityArtwork";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -138,7 +138,7 @@ export default function TicketWeekListing({ d, includeFlightCosts = false, early
         <div className="ticket-perf-v ticket-perf-image" aria-hidden="true"><span className="ticket-notch ticket-notch-top" /><span className="ticket-notch ticket-notch-end" /></div>
         <div className="ticket-trip">
           <div className="ticket-eyebrow-row">
-            <span className="ticket-eyebrow">{d.title}</span>
+            <span className="ticket-eyebrow" title={d.title}>{d.title}</span>
             {Boolean(d.is_new) && <span className="ticket-stamp">New</span>}
             {soldOut && <span className="ticket-stamp ticket-stamp-sold-out">Sold out</span>}
           </div>
@@ -196,7 +196,7 @@ export default function TicketWeekListing({ d, includeFlightCosts = false, early
           )}
           <div className="ticket-links">
             {googleFlights && <a className="ticket-link-button" href={googleFlights} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>{IconPlane}<span>Google Flights</span></a>}
-            <a className="ticket-link-button" href={d.url} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>{IconTicket}<span>View UCPA</span></a>
+            <a className="ticket-link-button" href={d.url} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>{IconPeak}<span>View UCPA</span></a>
           </div>
         </div>
 

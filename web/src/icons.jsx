@@ -60,6 +60,12 @@ export const IconTicket = (
   </svg>
 );
 
+export const IconPeak = (
+  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+    <path d="M2 12.5 L6 6.3 L8.3 9.7 L10.6 5.8 L14 12.5 Z" fill="currentColor" />
+  </svg>
+);
+
 // Fill state varies per card (favorited or not), so this one's a function
 // rather than a static const like the icons above.
 export function IconHeart(filled) {

@@ -94,7 +94,7 @@ export default function WeekListing({ d, includeFlightCosts = false, compact = f
           <div className="head-row">
             <h3 className="title">
               {Boolean(d.is_new) && <span className="chip chip-new">New</span>}
-              <span>{d.title}</span>
+              <span className="title-text" title={d.title}>{d.title}</span>
             </h3>
             <div className="head-actions">
               <div className="price-block">
