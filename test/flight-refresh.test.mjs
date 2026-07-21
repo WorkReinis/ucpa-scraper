@@ -77,6 +77,10 @@ test("refresh recovers an origin market omitted by the broad flight matrix", asy
     providerNames: ["apify"],
     searchProvider,
     delay: async () => {},
+    // This test is about Basel-market recovery, not the separate
+    // thinnest-gateway-airport pass -- the fixture's mock only ever routes
+    // through LYS, which would otherwise trip that unrelated check too.
+    checkThinAirports: false,
   });
 
   assert.equal(summary.failed, 0);
@@ -191,6 +195,9 @@ test("refresh can target Basel without re-querying other origin markets", async 
     originGroupIds: ["ch"],
     searchProvider,
     delay: async () => {},
+    // About Basel-only targeting, not the thinnest-gateway-airport pass --
+    // this fixture's minimal one-itinerary mock would otherwise trip it too.
+    checkThinAirports: false,
   });
 
   assert.equal(summary.complete, true);
@@ -219,6 +226,7 @@ test("refresh can target Basel without re-querying other origin markets", async 
     originGroupIds: ["ch"],
     searchProvider,
     delay: async () => {},
+    checkThinAirports: false,
   });
   assert.equal(cachedSummary.complete, true);
   assert.equal(cachedSummary.returnCacheHits, 1);
@@ -259,6 +267,10 @@ test("refresh retries a deeper exact route when broad flights all miss the windo
     originGroupIds: ["nl"],
     searchProvider,
     delay: async () => {},
+    // About the deep-window targeted retry, not the separate
+    // thinnest-gateway-airport pass -- this fixture's single-itinerary mock
+    // would otherwise trip that unrelated check too.
+    checkThinAirports: false,
   });
 
   assert.equal(summary.complete, true);
@@ -273,6 +285,96 @@ test("refresh retries a deeper exact route when broad flights all miss the windo
   assert.deepEqual(rows.map((row) => row.price), [170, 170]);
   assert.ok(rows.every((row) => row.price_outbound === 90 && row.price_return === 80));
   assert.ok(rows.every((row) => row.pricing_mode === "separate"));
+  db.close();
+});
+
+test("a thin gateway airport recovers a real, cheaper fare the broad search dropped", async () => {
+  // Mirrors the real 2026-07 measurement for Val d'Isere's gateway
+  // (northern-alps: CMF, GNB, GVA, LYS): a broad multi-airport search comes
+  // back GVA-dominant, with CMF entirely absent even though a real, cheaper
+  // Chambery fare exists -- confirmed live via an isolated single-airport
+  // search that removed GVA/LYS from competition.
+  const db = fixtureDb();
+  const calls = [];
+  const apifyRaw = (best_flights) => ({
+    provider: "apify",
+    secrets: [],
+    raw: { search_parameters: { engine: "google_flights" }, best_flights, other_flights: [] },
+  });
+  const searchProvider = async ({ originIds, destIds, outboundDate }) => {
+    calls.push({ originIds, destIds, outboundDate });
+    // The narrow single-airport retry this test is about: CMF, isolated.
+    if (destIds === "CMF") {
+      return apifyRaw([itinerary("AMS", "CMF", 150, outboundDate, "07:00", "08:35")]);
+    }
+    // Return leg (broad, and its own would-be narrow retry): deliberately
+    // balanced across every gateway airport, so only the outbound leg here
+    // is thin -- exactly 2 itineraries per airport, right at the default
+    // minCandidates floor, so none of them get flagged either.
+    if (originIds === "CMF,GNB,GVA,LYS" || originIds === "CMF") {
+      return apifyRaw(["CMF", "GNB", "GVA", "LYS"].flatMap((airport) => [
+        itinerary(airport, "AMS", 80, outboundDate, "14:00", "15:35"),
+        itinerary(airport, "AMS", 85, outboundDate, "14:10", "15:45"),
+      ]));
+    }
+    // Broad outbound search: GVA-dominant, CMF/GNB entirely absent.
+    return apifyRaw([
+      itinerary("AMS", "GVA", 200, outboundDate, "08:00", "09:35"),
+      itinerary("AMS", "GVA", 210, outboundDate, "10:00", "11:35"),
+      itinerary("AMS", "LYS", 220, outboundDate, "09:00", "10:35"),
+    ]);
+  };
+
+  const summary = await runFlightRefresh({
+    db, providerNames: ["apify"], originGroupIds: ["nl"], searchProvider, delay: async () => {},
+  });
+
+  assert.equal(summary.complete, true);
+  // One narrow CMF retry per arrival mode (standard + early); the balanced
+  // return leg never earns one.
+  const narrowCalls = calls.filter((call) => call.destIds === "CMF");
+  assert.equal(narrowCalls.length, 2);
+  assert.equal(summary.recoverySearches, 2);
+
+  const rows = db.prepare(
+    "SELECT price, dep_airport, arr_airport, price_outbound, price_return FROM v_flight_current ORDER BY arrival_mode"
+  ).all();
+  assert.equal(rows.length, 2);
+  // 150 (recovered CMF outbound) + 80 (return) -- not 200+80 from the
+  // GVA-dominant broad response the thin-airport pass corrected.
+  assert.ok(rows.every((row) => row.price === 230));
+  assert.ok(rows.every((row) => row.dep_airport === "AMS" && row.arr_airport === "CMF"));
+  assert.ok(rows.every((row) => row.price_outbound === 150 && row.price_return === 80));
+  db.close();
+});
+
+test("checkThinAirports: false skips the thin-airport pass entirely", async () => {
+  const db = fixtureDb();
+  const calls = [];
+  const searchProvider = async ({ originIds, destIds, outboundDate }) => {
+    calls.push({ destIds });
+    const isReturn = originIds === "CMF,GNB,GVA,LYS";
+    return {
+      provider: "apify",
+      secrets: [],
+      raw: {
+        search_parameters: { engine: "google_flights" },
+        best_flights: [isReturn
+          ? itinerary("GVA", "AMS", 80, outboundDate, "14:00", "15:35")
+          : itinerary("AMS", "GVA", 200, outboundDate, "08:00", "09:35")],
+        other_flights: [],
+      },
+    };
+  };
+
+  const summary = await runFlightRefresh({
+    db, providerNames: ["apify"], originGroupIds: ["nl"], searchProvider, delay: async () => {},
+    checkThinAirports: false,
+  });
+
+  assert.equal(summary.complete, true);
+  assert.equal(summary.recoverySearches, 0);
+  assert.ok(calls.every((call) => call.destIds !== "CMF" && call.destIds !== "GNB"));
   db.close();
 });
 
@@ -325,7 +427,11 @@ test("fallback requests are ledgered against the provider that was actually call
   };
 
   const summary = await runFlightRefresh({
+    // About provider-fallback ledgering, not the separate
+    // thinnest-gateway-airport pass -- this fixture's LYS-only mock would
+    // otherwise trip that unrelated check too.
     db, providerNames: ["apify", "serpapi"], searchProvider, delay: async () => {},
+    checkThinAirports: false,
   });
   assert.equal(summary.complete, true);
   assert.equal(summary.searched, 3);
@@ -380,6 +486,10 @@ test("an exhausted fallback does not turn a transient primary failure into globa
       };
     },
     delay: async () => {},
+    // About exhaustion/fallback recovery, not the separate
+    // thinnest-gateway-airport pass -- this fixture's LYS-only mock would
+    // otherwise trip that unrelated check too.
+    checkThinAirports: false,
   });
 
   assert.equal(recovered.complete, true);

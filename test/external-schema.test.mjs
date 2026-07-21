@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { parseOffers } from "../src/weeks.mjs";
 import {
   cellNeedsTargetedRetry, combineDirections, mergeOriginCoverage,
-  originGroupsMissingCoverage, parseFlightResponse,
+  originGroupsMissingCoverage, parseFlightResponse, thinnestGatewayAirport,
 } from "../src/flights.mjs";
 
 test("availability parser rejects unknown payload shapes and invalid offers", () => {
@@ -115,6 +115,62 @@ test("a cell with candidates but no viable fare earns one focused retry", () => 
   assert.equal(cellNeedsTargetedRetry({ candidate_count: 4, price: null, window_dropped: 4 }), true);
   assert.equal(cellNeedsTargetedRetry({ candidate_count: 0, price: null }), true);
   assert.equal(cellNeedsTargetedRetry({ candidate_count: 4, price: 190, window_dropped: 3 }), false);
+});
+
+test("the single most under-represented gateway airport is flagged, not every thin one", () => {
+  const nl = { id: "nl", airports: ["AMS", "RTM"] };
+  // Mirrors the real 2026-07 measurement: GVA dominates the response cap,
+  // GNB gets one lonely itinerary, CMF gets none at all.
+  const gateway = { id: "northern-alps", airports: ["CMF", "GNB", "GVA", "LYS"] };
+  const raw = {
+    best_flights: [
+      itineraryFor("AMS", "GVA", 166, "2026-12-19 08:00", "2026-12-19 09:35"),
+      itineraryFor("AMS", "GVA", 174, "2026-12-19 10:00", "2026-12-19 11:35"),
+      itineraryFor("AMS", "LYS", 201, "2026-12-19 09:00", "2026-12-19 10:35"),
+      itineraryFor("AMS", "GNB", 190, "2026-12-19 07:00", "2026-12-19 08:35"),
+    ],
+    other_flights: [],
+  };
+  // CMF: 0 itineraries, GNB: 1 -- CMF is strictly thinner, so it's the one
+  // flagged even though GNB is also below the default threshold of 2.
+  assert.equal(
+    thinnestGatewayAirport(raw, { gateway, originGroup: nl, direction: "outbound" }),
+    "CMF"
+  );
+  // The threshold is a real, adjustable parameter, not hardcoded: nothing
+  // can ever be "below zero" candidates, so a floor of 0 flags nothing.
+  assert.equal(
+    thinnestGatewayAirport(raw, { gateway, originGroup: nl, direction: "outbound", minCandidates: 0 }),
+    null
+  );
+  // A healthy response (every airport well represented) flags nothing.
+  const healthy = {
+    best_flights: gateway.airports.flatMap((airport) => [
+      itineraryFor("AMS", airport, 200, "2026-12-19 08:00", "2026-12-19 09:35"),
+      itineraryFor("AMS", airport, 210, "2026-12-19 10:00", "2026-12-19 11:35"),
+    ]),
+    other_flights: [],
+  };
+  assert.equal(thinnestGatewayAirport(healthy, { gateway, originGroup: nl, direction: "outbound" }), null);
+  // A single-airport gateway has nothing else to be crowded out by.
+  assert.equal(
+    thinnestGatewayAirport(raw, { gateway: { id: "pyrenees", airports: ["TLS"] }, originGroup: nl, direction: "outbound" }),
+    null
+  );
+  // Direction flips which side of the itinerary is the "gateway" airport --
+  // a return search departs the gateway and lands in the origin group.
+  const returnRaw = {
+    best_flights: [
+      itineraryFor("GVA", "AMS", 166, "2026-12-26 08:00", "2026-12-26 09:35"),
+      itineraryFor("GVA", "AMS", 174, "2026-12-26 10:00", "2026-12-26 11:35"),
+      itineraryFor("LYS", "AMS", 201, "2026-12-26 09:00", "2026-12-26 10:35"),
+    ],
+    other_flights: [],
+  };
+  assert.equal(
+    thinnestGatewayAirport(returnRaw, { gateway, originGroup: nl, direction: "return" }),
+    "CMF"
+  );
 });
 
 test("separate one-way fares are added only when both exact schedules exist", () => {

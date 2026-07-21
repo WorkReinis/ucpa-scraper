@@ -273,6 +273,45 @@ export function cellNeedsTargetedRetry(cell) {
   return cell?.price == null;
 }
 
+/** A cell can look "covered" (non-null price) while still hiding real, cheap
+ * service: Google's flexible multi-airport search caps its response at
+ * roughly 60-65 itineraries, and one dominant gateway airport (Geneva, in
+ * measurements taken 2026-07) can consume nearly all of that cap, leaving a
+ * second real gateway airport (Grenoble, Chambery) with 0-1 raw itineraries
+ * even though genuine, bookable, often-cheaper flights exist there --
+ * confirmed live: an isolated search with Geneva/Lyon removed from
+ * competition surfaced GBP120-260 EasyJet/Ryanair/Jet2 fares from London
+ * airports into Grenoble/Chambery that the broad search never returned at
+ * all. cellNeedsTargetedRetry can't see this, since the cell as a whole
+ * isn't empty.
+ *
+ * Returns at most ONE airport -- the single most under-represented one, if
+ * it falls below `minCandidates` -- not every thin airport. Deliberately
+ * bounded to one extra search per cell, the same "one exact narrow retry"
+ * cost as the whole-cell-empty case above: an unbounded per-airport version
+ * fires on nearly every airport in a gateway whenever the broad response
+ * happens to be sparse (routine for smaller gateways like Pyrenees, which
+ * has only two airports to begin with), turning a targeted fix into an
+ * unbounded, permanently-recurring one on every future refresh. */
+export function thinnestGatewayAirport(raw, { gateway, originGroup, direction, minCandidates = 2 }) {
+  if (gateway.airports.length < 2) return null; // nothing else in this gateway to be crowded out by
+  const rawItineraries = [...(raw?.best_flights ?? []), ...(raw?.other_flights ?? [])]
+    .filter((it) => it?.price != null && Array.isArray(it.flights) && it.flights.length > 0);
+  const groupSet = new Set(originGroup.airports);
+  const gatewayAirportOf = (it) => direction === "return"
+    ? it.flights[0]?.departure_airport?.id
+    : it.flights.at(-1)?.arrival_airport?.id;
+  const originAirportOf = (it) => direction === "return"
+    ? it.flights.at(-1)?.arrival_airport?.id
+    : it.flights[0]?.departure_airport?.id;
+  const countFor = (airport) => rawItineraries.filter((it) =>
+    gatewayAirportOf(it) === airport && groupSet.has(originAirportOf(it))
+  ).length;
+  const counted = gateway.airports.map((airport) => ({ airport, count: countFor(airport) }));
+  const thinnest = counted.reduce((a, b) => (b.count < a.count ? b : a));
+  return thinnest.count < minCandidates ? thinnest.airport : null;
+}
+
 /** Origin groups for which a broad provider response contained no raw
  * itinerary for at least one required gateway. This reports raw matrix
  * coverage only; cellNeedsTargetedRetry also handles candidates rejected by
@@ -309,6 +348,11 @@ export async function runFlightRefresh({
   originGroupIds,
   searchProvider,
   delay = sleep,
+  // On by default: an already-covered cell can still be skewed toward one
+  // dominant gateway airport (see thinnestGatewayAirport). Exposed so a test
+  // exercising something else entirely can use a minimal, single-itinerary
+  // fixture without also tripping this separate check.
+  checkThinAirports = true,
 } = {}) {
   const providers = providerNames ?? configuredProviders();
   if (!providers.length) {
@@ -601,7 +645,9 @@ export async function runFlightRefresh({
     // fare—whether omitted entirely or because every returned candidate was
     // rejected—retry that cell once with deeper provider results. The same
     // date/stop/transfer filters are applied again; this never widens policy.
-    const recoverMissingCoverage = async (cells, {
+    // `broadRaw` is the same broad response `cells` was parsed from -- passed
+    // through so the second pass below can also inspect it per airport.
+    const recoverMissingCoverage = async (cells, broadRaw, {
       direction, outboundDate, returnDate, arrivalMode,
     }) => {
       const covered = new Map(cells);
@@ -647,6 +693,66 @@ export async function runFlightRefresh({
             }
             throw new Error(
               `${originGroup.id}/${gateway.id} ${direction} coverage retry failed: ${error.message}`
+            );
+          }
+          await delay(DELAY_MS);
+        }
+      }
+
+      // Second pass: a cell that IS covered can still be quietly skewed
+      // toward one dominant gateway airport (see thinnestGatewayAirport) --
+      // check only cells that survived the pass above, so a fully empty
+      // cell never pays for both retries. At most one narrow single-airport
+      // search per cell, for whichever gateway airport is most under-
+      // represented -- either recovers a real, cheaper fare the broad
+      // search dropped, or -- if that airport genuinely has no service for
+      // this origin group -- confirms that cheaply, the same bounded cost
+      // as the whole-cell-empty case above.
+      for (const originGroup of checkThinAirports ? targetOriginGroups : []) {
+        for (const gateway of gateways) {
+          const cellKey = `${originGroup.id}|${gateway.id}`;
+          const cell = covered.get(cellKey);
+          if (cellNeedsTargetedRetry(cell)) continue;
+          const airport = thinnestGatewayAirport(broadRaw, { gateway, originGroup, direction });
+          if (!airport) continue;
+          let recoverySearch;
+          try {
+            recoverySearch = await runSearch({
+              originIds: direction === "return" ? airport : originGroup.airports.join(","),
+              destIds: direction === "return" ? originGroup.airports.join(",") : airport,
+              outboundDate,
+              returnDate,
+              direction,
+              arrivalMode,
+              scope: "targeted",
+            });
+            const narrowCell = parseFlightResponse(recoverySearch.raw, {
+              outboundDate, returnDate, direction, secrets: recoverySearch.secrets,
+              gateway: gateway.id, dests: [airport],
+              originGroup: originGroup.id, originAirports: originGroup.airports,
+            });
+            finishFlightSearch(
+              _db, recoverySearch.searchId, narrowCell.price != null ? "success" : "no_result"
+            );
+            summary.recoverySearches++;
+            const current = covered.get(cellKey);
+            const better = narrowCell.price != null && (current.price == null || narrowCell.price < current.price);
+            if (better) covered.set(cellKey, narrowCell);
+            console.log(
+              `    retried ${originGroup.id}/${gateway.id} ${direction} via ${recoverySearch.usedProvider} ` +
+              `for thin airport ${airport} (most under-represented in the broad response) -- ` +
+              (narrowCell.price != null
+                ? `found €${narrowCell.price}${better ? ", replacing" : ", kept existing"} €${current.price ?? "null"}`
+                : "nothing viable there")
+            );
+          } catch (error) {
+            if (recoverySearch) {
+              finishFlightSearch(_db, recoverySearch.searchId, "failed", error.message);
+              summary.failed++;
+              summary.errors.push(error.message);
+            }
+            throw new Error(
+              `${originGroup.id}/${gateway.id} ${direction} thin-airport (${airport}) retry failed: ${error.message}`
             );
           }
           await delay(DELAY_MS);
@@ -707,7 +813,7 @@ export async function runFlightRefresh({
         finishFlightSearch(_db, returnSearch.searchId,
           [...returnCells.values()].some((cell) => cell.price != null) ? "success" : "no_result");
         returnSearchClosed = true;
-        returnCells = await recoverMissingCoverage(returnCells, {
+        returnCells = await recoverMissingCoverage(returnCells, returnSearch.raw, {
           outboundDate: end_date, returnDate: end_date,
           direction: "return", arrivalMode: "standard",
         });
@@ -750,7 +856,7 @@ export async function runFlightRefresh({
         finishFlightSearch(_db, outboundSearch.searchId,
           [...outboundCells.values()].some((cell) => cell.price != null) ? "success" : "no_result");
         outboundSearchClosed = true;
-        outboundCells = await recoverMissingCoverage(outboundCells, {
+        outboundCells = await recoverMissingCoverage(outboundCells, outboundSearch.raw, {
           outboundDate: mode.flightDate, returnDate: end_date,
           direction: "outbound", arrivalMode: mode.id,
         });
