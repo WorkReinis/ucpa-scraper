@@ -67,9 +67,25 @@ export function pooledRemaining(rows) {
   return rows.filter((r) => !r.error).reduce((sum, r) => sum + (r.remainingUsd ?? 0), 0);
 }
 
-/** Inventory -> inspect all -> pick. The one call sites actually want. */
-export async function screenAndPick(env = process.env, fetchImpl = fetch) {
+/** Inventory -> inspect all -> pick. The one call sites actually want.
+ *
+ * If EVERY key comes back errored, that's retried once after a short delay
+ * before being trusted. Observed live (2026-07): a transient blip against
+ * Apify's own account API made all 5 keys fail in the same moment, resolving
+ * itself on a manual retry seconds later -- and by the time that error
+ * message ("no Apify account has remaining credit") reached search()'s
+ * caller, it was indistinguishable from genuine exhaustion, aborting an
+ * entire flight refresh with ~90% of its real pooled credit untouched. A
+ * real mixed result -- some keys genuinely at $0, one with an actual auth
+ * error -- is trusted immediately: retrying changes nothing there, only a
+ * moment where every single row failed to even report a balance is worth
+ * a second look. */
+export async function screenAndPick(env = process.env, fetchImpl = fetch, { retryDelayMs = 4000 } = {}) {
   const { unique, total } = collectKeys(env);
-  const rows = await Promise.all(unique.map((key) => inspectKey(key, fetchImpl)));
+  let rows = await Promise.all(unique.map((key) => inspectKey(key, fetchImpl)));
+  if (unique.length > 0 && rows.every((row) => row.error)) {
+    await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+    rows = await Promise.all(unique.map((key) => inspectKey(key, fetchImpl)));
+  }
   return { rows, total, pooled: pooledRemaining(rows), fullest: pickFullest(rows) };
 }
