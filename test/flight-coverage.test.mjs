@@ -16,8 +16,8 @@ test("coverage report distinguishes current cells, legacy fallbacks, and missing
   const early = daysFromNow(59);
   const end = daysFromNow(66);
   db.prepare(
-    `INSERT INTO product (code, resort, first_seen, last_seen)
-     VALUES ('fixture', 'Valloire', datetime('now'), datetime('now'))`
+    `INSERT INTO product (code, resort, region, first_seen, last_seen)
+     VALUES ('fixture', 'Valloire', 'Alpes du Nord', datetime('now'), datetime('now'))`
   ).run();
   db.prepare(
     `INSERT INTO week
@@ -26,7 +26,7 @@ test("coverage report distinguishes current cells, legacy fallbacks, and missing
   ).run(start, end);
 
   insertFlightPrice(db, {
-    origins: "AMS,RTM", dests: "CMF,GNB,GVA,LYS,ZRH", gateway: "northern-alps",
+    origins: "AMS,RTM", dests: "CMF,GNB,GVA,LYS", gateway: "northern-alps",
     origin_group: "nl", arrival_mode: "standard", provider: "apify",
     config_key: AIRPORT_CONFIG_KEY, outbound_date: start, return_date: end,
     price: 180, pricing_mode: "roundtrip", dep_airport: "AMS", arr_airport: "LYS",
@@ -40,7 +40,7 @@ test("coverage report distinguishes current cells, legacy fallbacks, and missing
     return_stops_dropped: 0,
   });
   insertFlightPrice(db, {
-    origins: "AMS,RTM", dests: "CMF,GNB,GVA,LYS,ZRH", gateway: "northern-alps",
+    origins: "AMS,RTM", dests: "CMF,GNB,GVA,LYS", gateway: "northern-alps",
     origin_group: "nl", arrival_mode: "early", provider: "serpapi",
     config_key: "legacy", outbound_date: early, return_date: end,
     price: 190, pricing_mode: "legacy", dep_airport: "AMS", arr_airport: "LYS",

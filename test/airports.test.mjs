@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   AIRPORT_CONFIG_KEY, AIRPORT_GATEWAYS, DEST_AIRPORTS, ORIGIN_AIRPORTS, ORIGIN_GROUPS,
-  TRANSFER_BANDS, earliestReturnDepartureFor, gatewayForResort, latestArrivalFor,
+  TRANSFER_BANDS, earliestReturnDepartureFor, gatewayForRegion, latestArrivalFor,
   originGroupById, validateOriginAssignments, validateResortAirportAssignments,
 } from "../src/airports.mjs";
 import { parseFlightResponse } from "../src/flights.mjs";
@@ -20,13 +20,16 @@ function itinerary(to, price, from = "AMS", { departAt = "2026-12-05 08:00", arr
   };
 }
 
-test("every airport gateway has unique resorts and valid IATA codes", () => {
-  const resorts = AIRPORT_GATEWAYS.flatMap((gateway) => gateway.resorts);
-  assert.equal(new Set(resorts).size, resorts.length);
+test("every airport gateway covers exactly one region and has valid IATA codes", () => {
+  const regions = AIRPORT_GATEWAYS.map((gateway) => gateway.region);
+  assert.equal(new Set(regions).size, regions.length);
   assert.ok(DEST_AIRPORTS.every((code) => /^[A-Z]{3}$/.test(code)));
-  assert.deepEqual(gatewayForResort("Saint-Lary Soulan").airports, ["LDE", "TLS"]);
-  assert.deepEqual(gatewayForResort("Chamonix").airports, ["GVA", "LYS"]);
-  assert.deepEqual(gatewayForResort("Queyras").airports, ["MRS", "TRN", "LYS"]);
+  // Every resort in a region shares that region's gateway -- there is no
+  // per-resort lookup any more, only per-region.
+  assert.deepEqual(gatewayForRegion("Pyrénées").airports, ["LDE", "TLS"]);
+  assert.deepEqual(gatewayForRegion("Alpes du Nord").airports, ["CMF", "GNB", "GVA", "LYS"]);
+  assert.deepEqual(gatewayForRegion("Alpes du Sud").airports, ["GNB", "TRN", "MRS", "GVA", "LYS"]);
+  assert.equal(gatewayForRegion("nope"), null);
 });
 
 test("origin groups are disjoint and flatten into ORIGIN_AIRPORTS", () => {
@@ -64,17 +67,23 @@ test("transfer bands are complete, monotone, and floor-terminated", () => {
 });
 
 test("viability windows derive from transfer duration through the bands", () => {
-  assert.equal(latestArrivalFor("mont-blanc", "GVA"), "21:00");        // 1.25h
-  assert.equal(earliestReturnDepartureFor("mont-blanc", "GVA"), "10:00");
-  assert.equal(latestArrivalFor("northern-alps", "ZRH"), "18:30");     // 4.5h -> floor
-  assert.equal(earliestReturnDepartureFor("northern-alps", "ZRH"), "12:30");
-  assert.equal(latestArrivalFor("mont-blanc", "LYS"), "20:00");        // 2.5h boundary lands in <=2.5
   assert.equal(latestArrivalFor("northern-alps", "GVA"), "19:00");     // 3.0h
+  assert.equal(earliestReturnDepartureFor("northern-alps", "GVA"), "11:30");
+  // ZRH was cut from northern-alps (2026-07): too far a transfer, and not on
+  // the established GVA/LYS ski-shuttle network. Confirm it's really gone,
+  // not just unlisted.
+  assert.throws(() => latestArrivalFor("northern-alps", "ZRH"), /No transfer duration/);
+  // Same physical airport, two different regions: GVA is a 3.0h transfer for
+  // the northern-alps gateway but a 4.0h one for southern-alps, so it gets a
+  // stricter cutoff there -- the window is per (gateway, airport), grouping
+  // by region doesn't collapse that back to one global number per airport.
+  assert.equal(latestArrivalFor("southern-alps", "GVA"), "18:30");    // 4.0h -> floor
+  assert.equal(latestArrivalFor("pyrenees", "LDE"), "21:00");         // 1.25h
   assert.throws(() => latestArrivalFor("northern-alps", "XXX"), /No transfer duration/);
   assert.throws(() => earliestReturnDepartureFor("nope", "GVA"), /No transfer duration/);
   // Editing durations or bands must invalidate the freshness ledger.
   assert.ok(AIRPORT_CONFIG_KEY.includes("bands:"));
-  assert.ok(AIRPORT_CONFIG_KEY.includes("ZRH=4.5"));
+  assert.ok(AIRPORT_CONFIG_KEY.includes("GNB=2.25"));
 });
 
 test("one multi-airport response is partitioned into resort-safe gateway quotes", () => {
@@ -104,7 +113,7 @@ test("a mixed-origin response is split by origin group, not just gateway", () =>
   };
   const cell = (originGroup) => parseFlightResponse(response, {
     outboundDate: "2026-12-05", returnDate: "2026-12-12",
-    gateway: "northern-alps", dests: ["CMF", "GNB", "GVA", "LYS", "ZRH"],
+    gateway: "northern-alps", dests: ["CMF", "GNB", "GVA", "LYS"],
     originGroup, originAirports: originGroupById(originGroup).airports,
   });
   const nl = cell("nl");
@@ -132,24 +141,27 @@ test("late landings are dropped per that airport's own window", () => {
   };
   const cell = parseFlightResponse(response, {
     outboundDate: "2026-12-05", returnDate: "2026-12-12",
-    gateway: "northern-alps", dests: ["CMF", "GNB", "GVA", "LYS", "ZRH"],
+    gateway: "northern-alps", dests: ["CMF", "GNB", "GVA", "LYS"],
   });
   assert.equal(cell.price, 152);
   assert.equal(cell.window_dropped, 1);
 
-  // The same 19:30 landing dies for northern-alps/LYS (19:00) but lives for
-  // mont-blanc/LYS (20:00) -- per-(gateway, airport) windows, not global.
+  // The same LYS airport is a 3.0h transfer for northern-alps (cutoff 19:00)
+  // but a 4.0h one for southern-alps (cutoff 18:30, the floor band) -- the
+  // window is per (gateway, airport), not a single global number per airport,
+  // even though grouping is now by region rather than by individual resort.
+  // An 18:45 landing lives for the looser gateway and dies for the stricter one.
   const border = {
     search_parameters: { engine: "google_flights" },
-    best_flights: [itinerary("LYS", 99, "AMS", { arriveAt: "2026-12-05 19:30" })],
+    best_flights: [itinerary("LYS", 99, "AMS", { arriveAt: "2026-12-05 18:45" })],
   };
   assert.equal(parseFlightResponse(border, {
     outboundDate: "2026-12-05", returnDate: "2026-12-12",
-    gateway: "northern-alps", dests: ["CMF", "GNB", "GVA", "LYS", "ZRH"],
+    gateway: "southern-alps", dests: ["GNB", "TRN", "MRS", "GVA", "LYS"],
   }).price, null);
   assert.equal(parseFlightResponse(border, {
     outboundDate: "2026-12-05", returnDate: "2026-12-12",
-    gateway: "mont-blanc", dests: ["GVA", "LYS"],
+    gateway: "northern-alps", dests: ["CMF", "GNB", "GVA", "LYS"],
   }).price, 99);
 });
 
@@ -166,7 +178,7 @@ test("return direction mirrors airports and drops too-early departures", () => {
   };
   const cell = parseFlightResponse(response, {
     outboundDate: "2026-12-12", returnDate: "2026-12-12", direction: "return",
-    gateway: "northern-alps", dests: ["CMF", "GNB", "GVA", "LYS", "ZRH"],
+    gateway: "northern-alps", dests: ["CMF", "GNB", "GVA", "LYS"],
   });
   assert.equal(cell.price, 72);
   assert.equal(cell.dep_airport, "GVA");
@@ -189,17 +201,58 @@ test("itineraries with missing leg times survive the window filter", () => {
   };
   const cell = parseFlightResponse(response, {
     outboundDate: "2026-12-05", returnDate: "2026-12-12",
-    gateway: "northern-alps", dests: ["CMF", "GNB", "GVA", "LYS", "ZRH"],
+    gateway: "northern-alps", dests: ["CMF", "GNB", "GVA", "LYS"],
   });
   assert.equal(cell.price, 120);
   assert.equal(cell.window_dropped, 0);
 });
 
 test("airport validation rejects cross-region flight assignments", () => {
-  const issues = validateResortAirportAssignments(["Saint-Lary Soulan"], [{
-    resort: "Saint-Lary Soulan", gateway: "northern-alps", arr_airport: "LYS",
-  }]);
+  // config_key: AIRPORT_CONFIG_KEY marks this as a freshly-fetched quote, so
+  // a bad assignment here is a real bug (an issue), not a stale-policy
+  // fallback (a warning) -- see the "legacy fallback" test below for that case.
+  const { issues } = validateResortAirportAssignments(
+    [{ resort: "Saint-Lary Soulan", region: "Pyrénées" }],
+    [{
+      resort: "Saint-Lary Soulan", region: "Pyrénées",
+      gateway: "northern-alps", arr_airport: "LYS", config_key: AIRPORT_CONFIG_KEY,
+    }]
+  );
   assert.equal(issues.length, 2);
+});
+
+test("a legacy-fallback quote failing the current airport list warns instead of failing", () => {
+  // Same bad pairing as above, but with no config_key (as a row predating
+  // this field, or from a retired policy generation, would have) -- this is
+  // exactly what happens when an airport is cut from a gateway (ZRH here):
+  // old fallback rows still on display no longer fit the trimmed list.
+  const { issues, warnings } = validateResortAirportAssignments(
+    [{ resort: "Tignes", region: "Alpes du Nord" }],
+    [{ resort: "Tignes", region: "Alpes du Nord", gateway: "northern-alps", arr_airport: "ZRH" }]
+  );
+  assert.deepEqual(issues, []);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /ZRH is not allowed/);
+});
+
+test("an unmapped region warns without failing, a mis-mapped one still fails", () => {
+  // Nothing can attach a quote to a region with no gateway -- runFlightRefresh
+  // skips it -- so incomplete coverage must not read as a corrupt catalogue.
+  // "Alpes du Nord/Sud/Pyrénées" are the only regions UCPA's catalogue
+  // currently uses, all three covered, so a genuinely unmapped case needs a
+  // region that doesn't exist in the live data.
+  const unmapped = validateResortAirportAssignments(
+    [{ resort: "Nowhere Peak", region: "Alpes du Milieu" }], []
+  );
+  assert.deepEqual(unmapped.issues, []);
+  assert.equal(unmapped.warnings.length, 1);
+  assert.match(unmapped.warnings[0], /unmapped region/);
+
+  const mapped = validateResortAirportAssignments(
+    [{ resort: "Saint-Lary Soulan", region: "Pyrénées" }], []
+  );
+  assert.deepEqual(mapped.issues, []);
+  assert.deepEqual(mapped.warnings, []);
 });
 
 test("origin validation rejects a departure outside its own group", () => {
@@ -218,9 +271,13 @@ test("origin validation rejects a departure outside its own group", () => {
 });
 
 test("gateway validation rejects a return departing outside the gateway", () => {
-  const issues = validateResortAirportAssignments(["Saint-Lary Soulan"], [{
-    resort: "Saint-Lary Soulan", gateway: "pyrenees", arr_airport: "TLS", return_dep_airport: "LYS",
-  }]);
+  const { issues } = validateResortAirportAssignments(
+    [{ resort: "Saint-Lary Soulan", region: "Pyrénées" }],
+    [{
+      resort: "Saint-Lary Soulan", region: "Pyrénées", config_key: AIRPORT_CONFIG_KEY,
+      gateway: "pyrenees", arr_airport: "TLS", return_dep_airport: "LYS",
+    }]
+  );
   assert.equal(issues.length, 1);
   assert.match(issues[0], /return departs LYS/);
 });

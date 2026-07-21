@@ -7,10 +7,10 @@ watch prices move over the season, and see it all in a small React app.
 
 | Layer | Rendering | Scrapable? |
 |---|---|---|
-| Listing cards (title, resort, level, age, "from" price, discount, first bookable week, duration) | **Server-rendered HTML** | Yes, trivially |
+| Listing products (title, resort, level, age, "from" price, discount, first bookable week, duration) | **JSON API** | Yes — `src/listing.mjs` |
 | Product page prose (includes/excludes, instructor hours, accommodation, transfer info) | **Server-rendered HTML** | Yes — `src/details.mjs` |
 | Per-date week prices + availability | **Client-side XHR** | Yes — `src/weeks.mjs` |
-| "Voir plus de séjours" pagination | **Probably XHR** | Not solved, see below |
+| "Voir plus de séjours" pagination | **JSON API** | Yes — `src/listing.mjs` |
 
 The per-date calendar (the thing that actually makes this app useful — exact
 price and real remaining seats for each week, Nov through April) comes from
@@ -28,9 +28,27 @@ before the fetch fires, not a real sold-out flag; the JSON is authoritative
 (`available_stock` is the live remaining-seats count — UCPA's own "Plus que 2
 places disponibles" warning fires exactly when it hits 2).
 
-Listing pagination (`?page=2`) is still inert — it's XHR-backed and not
-reverse-engineered. Not a problem in practice: each of the three source
-listings (snowboard / hors-piste / splitboard) fits on one page.
+Listing pagination (`?page=2`) is inert — it returns page 1 again. The
+listing pages server-render only their first **9** products; "voir plus de
+séjours" fetches the rest from the same family of endpoint:
+
+```
+/api/products?filters={"context":"1-1-1","duration":["semaine"],
+                       "activity_label":["ski-alpin"]}&start=9&workspace=speedboat
+```
+
+Also a plain unauthenticated GET. `src/listing.mjs` turns each configured
+listing URL into that `{duration, activity_label}` filter and follows `start`
+to the end (the server ignores any page-size parameter and always returns 9;
+`count` appears only on the first page). Products come back as structured
+fields, so the card-text parsing in `src/parse.mjs` isn't used on this path —
+`parseCard` stays for `src/probe.mjs`.
+
+This matters more than it sounds: while the only sources were snowboard /
+hors-piste / splitboard, each genuinely fitted on one page and the 9-product
+cap was invisible. Adding `sejour-ski-alpin` (128 products) made the scraper
+silently store 9 of them. The catalogue went from 49 products / 10 resorts to
+313 / 16 once pagination was followed.
 
 ## Quickstart
 

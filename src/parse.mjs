@@ -17,6 +17,9 @@ export const ACTIVITIES = [
   "Snowboard",
   "Raquettes",
   "Biathlon",
+  // Adaptive skiing. Reaches the ski/snowboard listings because UCPA tags
+  // these packages with the same activity labels we query.
+  "Handiski (dual/tandem)",
 ];
 
 const num = (s) =>

@@ -24,12 +24,25 @@ const CATEGORICAL_RULES = [
   ["Multi activités Montagne", "Multi-activity mountain"],
   ["Ski alpin", "Alpine ski"],
   ["Raquettes", "Snowshoeing"],
+  ["Handiski (dual/tandem)", "Adaptive ski (dual/tandem)"],
 
+  // Order matters: each rule runs against what earlier rules left behind, so
+  // the longer label has to be listed before the prefix it contains.
+  ["Tous niveaux dépublié", "All levels (unpublished)"],
+  ["Tous niveaux", "All levels"],
   ["Initié à expert", "Intermediate to expert"],
   ["initié à expert", "intermediate to expert"],
   ["Débutant", "Beginner"],
   ["Découverte", "Discovery"],
   ["Niveau technique", "Skill level"],
+  ["Déjà fait", "Previously attended"],
+  ["Confirmé", "Proficient"],
+  ["Maîtrise", "Mastery"],
+  ["Initié", "Novice"],
+  ["Niveau 1", "Level 1"],
+  ["Niveau 2", "Level 2"],
+  ["Niveau 3", "Level 3"],
+  ["Niveau 4", "Level 4"],
 
   // UCPA transport pickup cities (src/weeks.mjs) -- almost all spelled the
   // same in French and English (Paris, Lyon, Nantes...); Brussels is the one
@@ -259,12 +272,23 @@ const COMPILED_RULES = RULES.map(([pattern, replacement]) => [
   replacement,
 ]);
 
+// Same handful of product titles/activities/levels/phrases recur across
+// every week row of every product (a few hundred products, thousands of
+// weeks), so caching by input text turns most calls into a Map lookup
+// instead of another 190-rule pass. Safe to keep for the process lifetime:
+// translate() is pure given the constant COMPILED_RULES, and the input
+// domain is the scraped catalogue's own text, not unbounded user input.
+const translateCache = new Map();
+
 export function translate(text) {
   if (!text) return text;
+  const cached = translateCache.get(text);
+  if (cached !== undefined) return cached;
   let out = text;
   for (const [re, replacement] of COMPILED_RULES) {
     out = out.replace(re, replacement);
   }
+  translateCache.set(text, out);
   return out;
 }
 

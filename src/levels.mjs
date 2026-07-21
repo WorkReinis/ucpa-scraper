@@ -29,6 +29,18 @@ export const LEVEL_TIERS = {
   // the same package also splits more experienced guests into suitable groups.
   "Ski - initié à expert": "Novice",
   "Snowboard - Initié à expert": "Novice",
+  // UCPA's on-piste ladder is Débutant < Initié < Confirmé < Maîtrise. Only
+  // the two ends were visible while the scraper saw one listing page per
+  // activity; the middle rungs appeared once the full catalogue was fetched.
+  "Ski - Initié": "Novice",
+  "Snowboard - Initié": "Novice",
+  "Ski - Confirmé": "Intermediate",
+  "Snowboard - Confirmé": "Intermediate",
+  "Ski - Maîtrise": "Advanced",
+  "Snowboard - Maîtrise": "Advanced",
+  // Open-to-everyone packages (Biathlon, Raquettes): no minimum experience,
+  // so they rank at the accessible end of the same "minimum entry" scale.
+  "Tous niveaux": "Beginner",
   // "Découverte" means discovering off-piste, not learning to ski: UCPA
   // requires an already-confirmed piste skier or snowboarder.
   "Snowboard hors-piste - Découverte": "Intermediate",
@@ -41,6 +53,17 @@ export const LEVEL_TIERS = {
   "Ski de randonnée - Niveau 2": "Advanced",
   "Snowboard hors-piste - Expert": "Expert",
   "Ski hors-piste - Expert": "Expert",
+  // Touring grades 3 and 4 both sit above Niveau 2; "Expert" is the top of
+  // this scale, so they share it rather than inventing a rung above it.
+  "Ski de randonnée - Niveau 3": "Expert",
+  "Ski de randonnée - Niveau 4": "Expert",
+  // Not skill levels -- UCPA's CMS leaks these two into the level field on a
+  // handful of otherwise-normal, bookable packages ("dépublié" = unpublished,
+  // "Déjà fait" = already done). Mapped to Unrated so the product still gets
+  // catalogued instead of being dropped by productIssues() for an unknown
+  // level, without pretending we know where it sits on the ladder.
+  "Tous niveaux dépublié": "Unrated",
+  "Déjà fait": "Unrated",
 };
 
 const UNRATED = "Unrated";

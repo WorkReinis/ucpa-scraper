@@ -26,8 +26,8 @@ function daysFromNow(days) {
 function fixtureDb() {
   const db = open(":memory:");
   db.prepare(
-    `INSERT INTO product (code, resort, first_seen, last_seen)
-     VALUES ('fixture', 'Val d''Isère', datetime('now'), datetime('now'))`
+    `INSERT INTO product (code, resort, region, first_seen, last_seen)
+     VALUES ('fixture', 'Val d''Isère', 'Alpes du Nord', datetime('now'), datetime('now'))`
   ).run();
   db.prepare(
     `INSERT INTO week
@@ -93,9 +93,9 @@ test("refresh recovers an origin market omitted by the broad flight matrix", asy
   assert.equal(calls.filter((call) => call.destIds === "BSL").length, 1);
   assert.ok(calls.every((call) => !call.originIds.includes("TLS") && !call.destIds.includes("TLS")));
   assert.ok(calls.filter((call) => call.originIds === "BSL")
-    .every((call) => call.destIds === "CMF,GNB,GVA,LYS,ZRH"));
+    .every((call) => call.destIds === "CMF,GNB,GVA,LYS"));
   assert.ok(calls.filter((call) => call.destIds === "BSL")
-    .every((call) => call.originIds === "CMF,GNB,GVA,LYS,ZRH"));
+    .every((call) => call.originIds === "CMF,GNB,GVA,LYS"));
   assert.ok(calls.every((call) => call.returnDate == null));
 
   const rows = db.prepare(

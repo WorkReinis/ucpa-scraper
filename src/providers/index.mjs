@@ -8,17 +8,14 @@
 import * as apify from "./apify.mjs";
 import * as serpapi from "./serpapi.mjs";
 
-// Run-count ceiling for Apify across all keys per calendar month.
-// ~$20/month pooled free credit at ~$0.03/run is ~666 runs; the one-way
-// cadence (3 searches per week pair) worst-cases near 500/month at 6-day
-// freshness, so 450 caps spend at ~$13.50 while covering normal cycles.
-// A deliberate one-off backfill can raise this guard without weakening the
-// provider's separate live-credit reserve (for example:
-// APIFY_MONTHLY_RUN_LIMIT=500 npm run flights).
-const configuredApifyLimit = Number.parseInt(process.env.APIFY_MONTHLY_RUN_LIMIT ?? "", 10);
-export const MONTHLY_RUN_LIMIT_APIFY = Number.isInteger(configuredApifyLimit) && configuredApifyLimit > 0
-  ? configuredApifyLimit
-  : 450;
+// Deliberately no run-count ceiling for Apify: unlike SerpApi's real
+// free-tier cap (MONTHLY_SEARCH_LIMIT, src/flights.mjs), Apify has no
+// "runs per month" limit of its own -- it only meters actual dollar spend
+// against whatever credit is on the account. That real constraint is
+// already enforced live, per call, by providers/apify.mjs's own reserve
+// guard (screenAndPick() + APIFY_RESERVE_USD) -- it throws when pooled
+// credit actually runs low, so nothing here needs to guess a number in
+// advance and fence it off pre-emptively.
 
 /** Priority-ordered provider names actually configured in `env`. */
 export function configuredProviders(env = process.env) {

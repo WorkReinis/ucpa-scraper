@@ -24,6 +24,25 @@ const GROUPS = {
   "Off-piste snowboard": ["Snowboard hors-piste"],
 };
 
+// Sidelines, not disciplines anyone is planning a week around: adaptive ski,
+// biathlon, snowshoeing, and splitboard together account for 24 of ~1900
+// bookable listings. They stay in the database -- the scrape still records
+// them, and their price history keeps accumulating -- but src/catalog.mjs
+// keeps them out of everything the app reads, so they don't pad the activity
+// filter or the counts beside it.
+//
+// This costs nothing on the flight side. Quotes are keyed by
+// (date pair x airport gateway) and shared by every package at that resort,
+// and all 14 cells these touch are already covered by mainstream packages at
+// the same resorts and dates -- so none of them pulls an airport search that
+// wouldn't happen anyway.
+export const HIDDEN_ACTIVITIES = [
+  "Handiski (dual/tandem)",
+  "Biathlon",
+  "Raquettes",
+  "Splitboard",
+];
+
 const DISPLAY_ORDER = Object.keys(GROUPS);
 function rank(name) {
   const i = DISPLAY_ORDER.indexOf(name);

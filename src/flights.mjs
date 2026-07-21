@@ -36,10 +36,10 @@ import { writeDiagnostic } from "./diagnostics.mjs";
 import { wholePrice } from "./validation.mjs";
 import {
   AIRPORT_CONFIG_KEY, AIRPORT_GATEWAYS, DEST_AIRPORTS, ORIGIN_GROUPS,
-  earliestReturnDepartureFor, gatewayById, gatewayForResort, latestArrivalFor, originGroupById,
+  earliestReturnDepartureFor, gatewayById, gatewayForRegion, latestArrivalFor, originGroupById,
 } from "./airports.mjs";
 import {
-  searchWithProvider as providerSearchWithProvider, configuredProviders, MONTHLY_RUN_LIMIT_APIFY,
+  searchWithProvider as providerSearchWithProvider, configuredProviders,
 } from "./providers/index.mjs";
 import { MAX_FLIGHT_STOPS } from "./flight-config.mjs";
 
@@ -69,8 +69,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export function flightPolicy({ monthlyAttempts, recentAttempts, hasFreshQuote, provider = "serpapi" }) {
   if (hasFreshQuote) return "fresh_quote";
-  const limit = provider === "apify" ? MONTHLY_RUN_LIMIT_APIFY : MONTHLY_SEARCH_LIMIT;
-  if (monthlyAttempts >= limit) return "monthly_quota";
+  // Only SerpApi has a real monthly ceiling to gate on -- Apify's is live
+  // account credit, checked at call time, not a count agreed in advance.
+  if (provider !== "apify" && monthlyAttempts >= MONTHLY_SEARCH_LIMIT) return "monthly_quota";
   if (recentAttempts >= MAX_ATTEMPTS_PER_PAIR_WINDOW) return "recent_attempts";
   return "search";
 }
@@ -330,16 +331,28 @@ export async function runFlightRefresh({
   const _db = db ?? open();
 
   const pairRows = _db.prepare(
-    `SELECT DISTINCT w.start_date, w.end_date, p.resort
+    `SELECT DISTINCT w.start_date, w.end_date, p.resort, p.region
      FROM v_week_current w JOIN product p ON p.code = w.code
      WHERE w.seats_left > 0 AND w.end_date IS NOT NULL
        AND w.start_date > date('now') AND w.start_date <= date('now', ?)
      ORDER BY w.start_date`
   ).all(`+${FLIGHT_MONTHS_AHEAD} months`);
   const pairMap = new Map();
+  const unmappedResorts = new Set();
   for (const row of pairRows) {
-    const gateway = gatewayForResort(row.resort);
-    if (!gateway) throw new Error(`No validated airport gateway for resort: ${row.resort}`);
+    const gateway = gatewayForRegion(row.region);
+    // A region UCPA added, or renamed, that nobody has mapped to a gateway
+    // yet must not cost every other resort its quotes -- this used to throw
+    // and abort the whole refresh. Skipping leaves that resort's weeks
+    // unquoted (the UI already renders an unquoted week), and
+    // validate-airports.mjs still reports it as an unmapped region.
+    if (!gateway) {
+      if (!unmappedResorts.has(row.resort)) {
+        unmappedResorts.add(row.resort);
+        console.warn(`  ! no airport gateway for region, skipping its weeks: ${row.resort} [${row.region}]`);
+      }
+      continue;
+    }
     const key = `${row.start_date}|${row.end_date}`;
     const pair = pairMap.get(key) ?? {
       start_date: row.start_date, end_date: row.end_date, gatewayIds: new Set(),
@@ -403,6 +416,18 @@ export async function runFlightRefresh({
   const freshnessWindow = `-${FLIGHT_REFRESH_DAYS} days`;
   const returnFreshnessWindow = `-${RETURN_SCHEDULE_REFRESH_DAYS} days`;
 
+  // Infinity for apify (no self-imposed ceiling) is correct for the gating
+  // comparisons below, but a bare Infinity is the wrong thing to put in any
+  // written/reported field: JSON.stringify silently turns it into `null`,
+  // which means an in-memory Infinity and a freshly-parsed-from-disk null
+  // look identical when printed but are NOT `===` or deepEqual -- exactly
+  // what verify:static caught by re-computing this live and comparing
+  // objects directly, not stringified ones. reportedLimit/reportedRemaining
+  // make that `null` explicit up front instead of relying on the coercion.
+  const quotaLimitFor = (provider) => provider === "apify" ? Infinity : MONTHLY_SEARCH_LIMIT;
+  const reportedLimit = (limit) => Number.isFinite(limit) ? limit : null;
+  const reportedRemaining = (limit, used) => Number.isFinite(limit) ? Math.max(limit - used, 0) : null;
+
   const summary = {
     pairs: pairs.length,
     modes: ARRIVAL_MODES.length,
@@ -424,7 +449,7 @@ export async function runFlightRefresh({
     recentAttemptSkipped: 0,
     provider: primaryProvider,
     originGroups: requestedOriginIds,
-    quotaLimit: primaryProvider === "apify" ? MONTHLY_RUN_LIMIT_APIFY : MONTHLY_SEARCH_LIMIT,
+    quotaLimit: reportedLimit(quotaLimitFor(primaryProvider)),
     quotaUsed: monthlyAttempts[primaryProvider],
     quotaExhausted: false,
     providerAttempts: 0,
@@ -433,8 +458,6 @@ export async function runFlightRefresh({
     errors: [],
   };
 
-  const quotaLimitFor = (provider) =>
-    provider === "apify" ? MONTHLY_RUN_LIMIT_APIFY : MONTHLY_SEARCH_LIMIT;
   const providerWithQuota = () => providers.find(
     (provider) => monthlyAttempts[provider] < quotaLimitFor(provider)
   );
@@ -781,11 +804,11 @@ export async function runFlightRefresh({
     }
   }
   summary.quotaUsed = monthlyAttempts[primaryProvider];
-  summary.quotaRemaining = Math.max(summary.quotaLimit - summary.quotaUsed, 0);
+  summary.quotaRemaining = reportedRemaining(quotaLimitFor(primaryProvider), summary.quotaUsed);
   summary.quotaByProvider = Object.fromEntries(providers.map((provider) => [provider, {
     used: monthlyAttempts[provider],
-    limit: quotaLimitFor(provider),
-    remaining: Math.max(quotaLimitFor(provider) - monthlyAttempts[provider], 0),
+    limit: reportedLimit(quotaLimitFor(provider)),
+    remaining: reportedRemaining(quotaLimitFor(provider), monthlyAttempts[provider]),
   }]));
   summary.cellsMissing = Math.max(summary.cellsDue - summary.cellsStored, 0);
   summary.unresolvedCells = summary.cellsUnpriced + summary.cellsMissing;

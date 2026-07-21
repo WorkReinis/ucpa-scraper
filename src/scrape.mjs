@@ -17,21 +17,25 @@
 
 import { fileURLToPath } from "node:url";
 import fs from "node:fs";
-import * as cheerio from "cheerio";
-import { parseCard } from "./parse.mjs";
 import {
   open, startRun, upsert, finishRun, upsertWeek, setProductDetails, insertSourceSnapshot,
 } from "./db.mjs";
+import { fetchActivityProducts } from "./listing.mjs";
 import { fetchWeeks } from "./weeks.mjs";
 import { parseDetails } from "./details.mjs";
 import { findUnknownCategories } from "./categories.mjs";
-import { assertDetailFailureRate, detailIssues, productIssues, sourceIssues } from "./validation.mjs";
+import { assertDetailFailureRate, detailIssues, sourceIssues } from "./validation.mjs";
 import { writeDiagnostic } from "./diagnostics.mjs";
 
 // --- config ----------------------------------------------------------------
 // Path shape is /activites/{duree}/{activite}. "semaine" = 7d packages.
 // Add rows here to widen the catalogue; the DB dedupes on product code, so
-// overlapping lists are harmless.
+// overlapping lists are harmless -- and they do overlap, since UCPA tags one
+// package with several activity labels.
+//
+// These are still the human-facing listing URLs, but nothing fetches the HTML
+// any more: src/listing.mjs turns each one into the {duration, activity_label}
+// filter behind the page's own product API, and follows it to the last page.
 const SOURCES = [
   "https://www.ucpa.com/activites/semaine/sejour-snowboard",
   "https://www.ucpa.com/activites/semaine/sejour-snowboard-hors-piste",
@@ -41,9 +45,9 @@ const SOURCES = [
   "https://www.ucpa.com/activites/semaine/sejour-ski-de-randonnee",
 ];
 
-const PAGE_PARAM = "page"; // <- CONFIRM WITH probe.mjs. See README.
-const MAX_PAGES = 20;
-const DELAY_MS = 1500; // be a good citizen; 97 products is not a load test
+// Between per-product page fetches. The listing itself paginates over JSON in
+// src/listing.mjs and throttles itself more lightly.
+const DELAY_MS = 1500; // be a good citizen; this is not a load test
 
 const UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
@@ -93,109 +97,27 @@ export async function warmImageVariants(imageUrls) {
   return { warmed, total: jobs.length };
 }
 
-function structuredTitles($) {
-  const titles = new Map();
-
-  function visit(value) {
-    if (Array.isArray(value)) return value.forEach(visit);
-    if (!value || typeof value !== "object") return;
-
-    const types = [].concat(value["@type"] ?? []);
-    const productUrl = value.url ?? value.offers?.url;
-    const code = typeof productUrl === "string" && productUrl.match(/\/sejour\/([a-z0-9]+)-/i)?.[1]?.toLowerCase();
-    if (types.includes("Product") && code && typeof value.name === "string") {
-      titles.set(code, value.name.trim());
-    }
-    Object.values(value).forEach(visit);
-  }
-
-  for (const script of $('script[type="application/ld+json"]').toArray()) {
-    try {
-      visit(JSON.parse($(script).html() || ""));
-    } catch {
-      // A malformed unrelated JSON-LD block must not discard the cards.
-    }
-  }
-  return titles;
-}
-
-async function getCards(url) {
-  const html = await fetch(url, {
-    headers: { "user-agent": UA, "accept-language": "fr-FR,fr;q=0.9,en;q=0.8" },
-  }).then((r) => {
-    if (!r.ok) throw new Error(`HTTP ${r.status} on ${url}`);
-    return r.text();
-  });
-
-  const $ = cheerio.load(html);
-  const titles = structuredTitles($);
-  const out = [];
-  const seen = new Set();
-  const invalid = [];
-  for (const el of $('a[href*="/sejour/"]').toArray()) {
-    const href = $(el).attr("href");
-    const text = $(el).text();
-    // Card links carry the whole card body; nav and "vous aimerez aussi"
-    // links are short. 80 chars separates them cleanly.
-    if (text.length < 80 || seen.has(href)) continue;
-    seen.add(href);
-    const code = href.match(/\/sejour\/([a-z0-9]+)-/i)?.[1]?.toLowerCase();
-    const canonicalTitle = code ? titles.get(code) : null;
-    const row = parseCard(href, text, canonicalTitle);
-    const issues = row ? productIssues(row) : ["card parser returned no product"];
-    if (row && !canonicalTitle) issues.push("missing canonical JSON-LD title");
-    if (issues.length === 0) {
-      out.push(row);
-    } else {
-      invalid.push({ href, issues, parsed: row });
-      console.warn(`  ! invalid product card: ${href} (${issues.join("; ")})`);
-    }
-  }
-  if (invalid.length > 0) {
-    const tag = new URL(url).pathname.split("/").at(-1) + `-p${new URL(url).searchParams.get(PAGE_PARAM) ?? 1}`;
-    writeDiagnostic(`${tag}-invalid-cards`, html, "html");
-    writeDiagnostic(`${tag}-invalid-cards`, invalid, "json");
-  }
-  return {
-    rows: out,
-    candidateHrefs: [...seen],
-    invalidHrefs: invalid.map((item) => item.href),
-  };
-}
-
-/** Walk pages until the codes stop changing (works whether or not ?page= is real). */
+/** Every product for one listing source, straight off UCPA's product API.
+ *  See src/listing.mjs for why the listing HTML is no longer read here. */
 async function crawl(base) {
-  const all = new Map();
-  const candidateHrefs = new Set();
-  const invalidHrefs = new Set();
-  for (let page = 1; page <= MAX_PAGES; page++) {
-    const url = page === 1 ? base : `${base}?${PAGE_PARAM}=${page}`;
-    const pageResult = await getCards(url);
-    const rows = pageResult.rows;
-    pageResult.candidateHrefs.forEach((href) => candidateHrefs.add(href));
-    pageResult.invalidHrefs.forEach((href) => invalidHrefs.add(href));
-    const fresh = rows.filter((r) => !all.has(r.code));
+  const result = await fetchActivityProducts(base, { ua: UA });
+  const skipped = result.excluded.length > 0
+    ? `, ${result.excluded.length} non-adult skipped`
+    : "";
+  console.log(`  ${result.rows.length} products (source reports ${result.candidateCount}${skipped})`);
 
-    console.log(`  p${page}: ${rows.length} cards, ${fresh.length} new`);
-    for (const r of rows) all.set(r.code, r);
-
-    // If page 2 gives us nothing new, ?page= is being ignored -> stop and say so.
-    if (page > 1 && fresh.length === 0) {
-      if (page === 2) {
-        console.warn(
-          `  ! "${PAGE_PARAM}" appears inert -- page 2 returned the same products.\n` +
-          `    Pagination is probably an XHR. Run probe.mjs and read the README.`
-        );
-      }
-      break;
-    }
-    if (rows.length === 0) break;
-    await sleep(DELAY_MS);
+  for (const item of result.invalid) {
+    console.warn(`  ! invalid product: ${item.url} (${item.issues.join("; ")})`);
   }
+  if (result.invalid.length > 0) {
+    const tag = new URL(base).pathname.split("/").at(-1);
+    writeDiagnostic(`${tag}-invalid-products`, result.invalid, "json");
+  }
+
   return {
-    rows: [...all.values()],
-    candidateCount: candidateHrefs.size,
-    unparseableCount: invalidHrefs.size,
+    rows: result.rows,
+    candidateCount: result.candidateCount,
+    unparseableCount: result.unparseableCount,
   };
 }
 

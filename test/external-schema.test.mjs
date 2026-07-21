@@ -74,7 +74,7 @@ test("flight parser rejects overnight arrivals and itineraries with more than on
   };
   const row = parseFlightResponse(response, {
     outboundDate: "2026-12-05", returnDate: "2026-12-12",
-    gateway: "northern-alps", dests: ["CMF", "GNB", "GVA", "LYS", "ZRH"],
+    gateway: "northern-alps", dests: ["CMF", "GNB", "GVA", "LYS"],
   });
   assert.equal(row.price, 130);
   assert.equal(row.candidate_count, 3);
@@ -123,14 +123,14 @@ test("separate one-way fares are added only when both exact schedules exist", ()
     best_flights: [itineraryFor("AMS", "LYS", 214, "2026-12-05 09:00", "2026-12-05 10:35")],
   }, {
     outboundDate: "2026-12-05", returnDate: "2026-12-12",
-    gateway: "northern-alps", dests: ["CMF", "GNB", "GVA", "LYS", "ZRH"],
+    gateway: "northern-alps", dests: ["CMF", "GNB", "GVA", "LYS"],
   });
   const ret = parseFlightResponse({
     search_parameters: { engine: "google_flights" },
     best_flights: [itineraryFor("LYS", "RTM", 124, "2026-12-12 12:10", "2026-12-12 13:45")],
   }, {
     outboundDate: "2026-12-12", returnDate: "2026-12-12", direction: "return",
-    gateway: "northern-alps", dests: ["CMF", "GNB", "GVA", "LYS", "ZRH"],
+    gateway: "northern-alps", dests: ["CMF", "GNB", "GVA", "LYS"],
   });
 
   const combined = combineDirections(outbound, ret, { pricingMode: "separate" });
@@ -206,7 +206,7 @@ test("an apify actor dataset item parses identically to a SerpApi response", () 
   };
   const nl = parseFlightResponse(apifyItem, {
     outboundDate: "2026-12-18", returnDate: "2026-12-27",
-    gateway: "northern-alps", dests: ["CMF", "GNB", "GVA", "LYS", "ZRH"],
+    gateway: "northern-alps", dests: ["CMF", "GNB", "GVA", "LYS"],
     originGroup: "nl", originAirports: ["AMS", "RTM"],
   });
   assert.equal(nl.price, 224);
@@ -214,7 +214,7 @@ test("an apify actor dataset item parses identically to a SerpApi response", () 
   assert.equal(nl.price_level, null); // price_insights is null on Apify rows
   const uk = parseFlightResponse(apifyItem, {
     outboundDate: "2026-12-18", returnDate: "2026-12-27",
-    gateway: "northern-alps", dests: ["CMF", "GNB", "GVA", "LYS", "ZRH"],
+    gateway: "northern-alps", dests: ["CMF", "GNB", "GVA", "LYS"],
     originGroup: "uk", originAirports: ["LHR", "LGW", "LTN", "STN", "LCY"],
   });
   assert.equal(uk.price, 133);
