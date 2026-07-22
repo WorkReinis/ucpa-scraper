@@ -139,13 +139,24 @@ $env:VITE_STATIC_DATA="1"; npm run build --prefix web
 ### Flight prices
 
 Ticket prices combine the UCPA package with the cheapest viable flight pair
-for the origin selected in the UI — Netherlands (AMS/RTM), London
-(LHR/LGW/LTN/STN/LCY), or Basel (BSL) — to the resort's validated gateway
-airports. By default the flight lands on the package's own start date
-(Sunday check-in); the "Arrive a day early" toggle switches every card to a
-Saturday flight for UCPA's paid early-arrival service, which also means a
-whole extra riding day. Both variants of all three origins are quoted on
-every refresh, so toggling in the UI is instant and never re-fetches.
+for the origin selected in the UI — Netherlands (AMS/RTM) or London
+(LHR/LGW/LTN/STN) — to the resort's validated gateway airports. By default
+the flight lands on the package's own start date (Sunday check-in); the
+"Arrive a day early" toggle switches every card to a Saturday flight for
+UCPA's paid early-arrival service, which also means a whole extra riding
+day. Both variants of both origins are quoted on every refresh, so toggling
+in the UI is instant and never re-fetches.
+
+A third origin, Basel (`ch`, single airport BSL), was retired (2026-07):
+half its stored quotes came back with no viable fare at all, the ones that
+did price needed a disproportionate share of recovery searches for one thin
+market, and Basel sits close enough to the Alps that rail may just be the
+better answer for that traveller anyway. See `src/airports.mjs` for the
+full writeup; historical Basel quotes remain in `flight_price` (nothing was
+deleted) but are no longer served. CMF (Chambéry) and LDE (Lourdes/Tarbes)
+were cut from their gateways the same day for the same reason — 0 real wins
+across their whole quote history — and London City (LCY) was cut from the
+London origin group for the same reason on the departure side.
 
 Quotes come from Google Flights through an Apify actor (primary; ~$0.03 per
 search, keys rotate across every `APIFY_KEY_*` by remaining free credit)
@@ -167,15 +178,16 @@ spending any.
 Run `npm run flights` locally for a manual refresh. Hosted refreshes run from
 the scheduled workflow; there are no public scrape or flight buttons.
 
-Each arrival mode uses an outbound one-way search, and one shared return
-one-way search supplies the shuttle-compatible return. The two prices are
-added and stored as `separate`, so the card's schedule and total always refer
-to the same two independently bookable tickets—even when the airlines or
-airports differ. This avoids attaching an unrelated return to a round-trip
-fare: the Apify actor returns Google departure tokens but cannot perform the
-required follow-up request. Return rows use the same six-day freshness as
-outbound fares. A full season is therefore about 105 base searches. Each date pair
-queries only airports serving packages on those dates. If Google omits one
+Each arrival mode fires one genuine round-trip search covering every origin x
+gateway airport at once; the provider prices it as a single bundled fare
+(real round-trip discounts included, often cheaper than two separate
+one-ways on the same route) and the result is stored as `roundtrip`. The
+provider exposes full schedule detail for the outbound leg only — the
+return leg's own departure time is never returned, only the bundled total —
+so the return leg's fit within the shuttle-transfer window is not verified;
+that's an accepted risk, not an oversight. A full season is therefore about
+70 base searches. Each date pair queries only airports serving packages on
+those dates. If Google omits one
 origin x resort-gateway cell—or returns candidates but none survive the
 date, stop, and transfer-window filters—one deeper retry searches exactly
 that cell. Apify reads a second results page; SerpApi enables hidden/deep
@@ -189,23 +201,24 @@ searched calendar day, preventing an overnight itinerary from masquerading
 as a valid same-day or early-arrival flight. Candidate and rejection counts
 are stored with every quote so sparse broad-search results remain auditable.
 
-Flights are only counted when their times fit the estimated resort-transfer
-durations per (gateway, airport) map through shared bands
-(`src/airports.mjs` `TRANSFER_BANDS`) to a latest viable landing time
-(21:00 for ≤1.5 h transfers down to an 18:30 floor) and an earliest viable
-return departure (10:00 up to 12:30). Availability of a transfer service is
-assumed; no provider/day-of-week timetable is enforced. Editing a duration or
-the band policy re-quotes automatically on the next refresh.
+The outbound leg is only counted when its landing time fits the estimated
+resort-transfer duration per (gateway, airport), mapped through shared bands
+(`src/airports.mjs` `TRANSFER_BANDS`) to a latest viable landing time (21:00
+for ≤1.5 h transfers down to an 18:30 floor). The equivalent earliest-viable
+return-departure check (10:00 up to 12:30) exists in the same bands and still
+applies to any one-way return leg fetched independently, but the round-trip
+search's return leg has no schedule data to check it against. Availability of
+a transfer service is assumed; no provider/day-of-week timetable is enforced.
+Editing a duration or the band policy re-quotes automatically on the next
+refresh.
 
 Quotes are append-only in `flight_price` (price history for free, like
-everything else here); shared return fares and schedules live in
-`flight_return_schedule`. Both halves stay fresh for six calendar days. The ledger
-permits two failed attempts per actual provider-search key (including shared
-return searches) in that rolling window and enforces a monthly ceiling per
-provider (450 Apify runs, 225 SerpApi searches). Every fallback attempt gets
-its own ledger row under the provider that was actually called.
-Without a current quote, the ticket keeps its package price and links to a
-manual Google Flights search.
+everything else here) and stay fresh for six calendar days. The ledger
+permits two failed attempts per actual provider-search key in that rolling
+window and enforces a monthly ceiling per provider (450 Apify runs, 225
+SerpApi searches). Every fallback attempt gets its own ledger row under the
+provider that was actually called. Without a current quote, the ticket keeps
+its package price and links to a manual Google Flights search.
 
 `npm run validate:airports` reports current-policy coverage without failing
 an ordinary catalogue-only deploy. `npm run validate:flights` is the strict

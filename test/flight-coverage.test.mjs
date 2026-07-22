@@ -49,10 +49,11 @@ test("coverage report distinguishes current cells, legacy fallbacks, and missing
   });
 
   const report = flightCoverageReport(db);
-  assert.equal(report.expected, 6);
+  // 2 origin groups (nl, uk -- ch was retired 2026-07) x 2 arrival modes.
+  assert.equal(report.expected, 4);
   assert.equal(report.current, 1);
   assert.equal(report.priced, 1);
-  assert.equal(report.missing, 5);
+  assert.equal(report.missing, 3);
   assert.equal(report.legacyFallbacks, 1);
   assert.equal(report.invalidDateCells, 0);
   assert.equal(report.excessiveStopCells, 0);

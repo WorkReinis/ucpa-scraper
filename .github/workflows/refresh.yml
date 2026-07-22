@@ -23,10 +23,8 @@ on:
         type: choice
         options:
           - all
-          - nl+uk
           - nl
           - uk
-          - ch
       flight_provider:
         description: Provider policy for a manual flight run
         required: true
@@ -63,7 +61,7 @@ jobs:
       APIFY_KEY_3: ${{ secrets.APIFY_KEY_3 }}
       APIFY_KEY_4: ${{ secrets.APIFY_KEY_4 }}
       APIFY_KEY_5: ${{ secrets.APIFY_KEY_5 }}
-      FLIGHT_ORIGIN_GROUPS: ${{ inputs.flight_origins == 'nl+uk' && 'nl,uk' || inputs.flight_origins == 'all' && '' || inputs.flight_origins }}
+      FLIGHT_ORIGIN_GROUPS: ${{ inputs.flight_origins == 'all' && '' || inputs.flight_origins }}
       FLIGHT_PROVIDER: ${{ inputs.flight_provider == 'auto' && '' || inputs.flight_provider }}
       SCRAPE_DIAGNOSTICS_DIR: .scrape-diagnostics
     steps:
@@ -222,7 +220,7 @@ jobs:
             jq -r '"- Listings: \(.listings)\n- Last scrape: \(.lastScrapedAt)\n- Last flight check: \(.lastFlightsRefreshAt)\n- Flight quota: apify \(.flightQuota.apify.used)/\(.flightQuota.apify.limit), serpapi \(.flightQuota.serpapi.used)/\(.flightQuota.serpapi.limit)\n- Unknown category groups: \(.unknownCategoryGroups)"' .refresh-summary.json >> "$GITHUB_STEP_SUMMARY"
           fi
           if test -f .flight-summary.json; then
-            jq -r '"- Flight refresh: \(.status // "failed")\n- Flight modes: \(.modesCompleted // 0)/\(.modesDue // 0) completed\n- Flight cells: \(.cellsStored // 0)/\(.cellsDue // 0) stored (\(.cellsUnpriced // 0) searched with no viable price, \(.unresolvedCells // 0) unresolved)\n- Provider searches: \(.searched // 0) successful, \(.providerAttempts // 0) attempted, \(.providerFallbacks // 0) fallbacks, \(.broadSearches // 0) broad, \(.targetedRetries // 0) targeted retries\n- Return cache: \(.returnCacheHits // 0) date-pair hits, \(.returnCellsReused // 0) cells reused\n- Failures: \(.failed // 0) logical, \(.providerAttemptFailures // 0) provider attempts"' .flight-summary.json >> "$GITHUB_STEP_SUMMARY"
+            jq -r '"- Flight refresh: \(.status // "failed")\n- Flight modes: \(.modesCompleted // 0)/\(.modesDue // 0) completed\n- Flight cells: \(.cellsStored // 0)/\(.cellsDue // 0) stored (\(.cellsUnpriced // 0) searched with no viable price, \(.unresolvedCells // 0) unresolved)\n- Provider searches: \(.searched // 0) successful, \(.providerAttempts // 0) attempted, \(.providerFallbacks // 0) fallbacks, \(.broadSearches // 0) broad, \(.targetedRetries // 0) targeted retries\n- Failures: \(.failed // 0) logical, \(.providerAttemptFailures // 0) provider attempts"' .flight-summary.json >> "$GITHUB_STEP_SUMMARY"
           fi
           if test -f .flight-coverage.json; then
             jq -r '"- Current flight coverage: \(.current)/\(.expected) cells (\(.priced) priced, \(.searchedUnpriced) no viable result, \(.missing) missing)\n- Flight quality flags: \(.invalidDateCells) invalid-date, \(.excessiveStopCells) excessive-stop, \(.sparseCandidateCells) sparse-candidate cells"' .flight-coverage.json >> "$GITHUB_STEP_SUMMARY"

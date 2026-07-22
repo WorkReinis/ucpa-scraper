@@ -1,20 +1,20 @@
 // node src/flights.mjs -> refresh flight quotes for upcoming weeks
 //
 // Google Flights via the provider seam in src/providers/ (Apify actor
-// primary, SerpApi fallback). Every displayed itinerary is priced as two
-// separately bookable one-way tickets: one outbound search per arrival mode
-// plus one shared return search per (start, end) pair. This is intentional:
-// the Apify actor exposes departure_token but cannot consume it, so attaching
-// an independently selected return to its round-trip fare would be false.
-// Searches include only gateways used by that date pair; a missing origin x
-// gateway cell gets one exact narrow retry.
+// primary, SerpApi fallback). Every displayed itinerary is a genuine bundled
+// round trip: one search per arrival mode, covering the whole origin x
+// gateway matrix at once, priced by the provider as a single fare (real
+// bundle discounts included -- often cheaper than two separate one-ways on
+// the same route). Searches include only gateways used by that date pair; a
+// missing origin x gateway cell gets one exact narrow retry.
 //
-// Shuttle viability: itineraries are filtered by the transfer windows in
-// src/airports.mjs (TRANSFER_BANDS) -- outbound flights must land before
-// the gateway airport's latest-arrival time, return flights must depart
-// after its earliest-departure time. Transfer-service availability is assumed;
-// the policy deliberately checks time windows only. The stored flight price is
-// the sum of the chosen outbound and return one-way fares.
+// Shuttle viability: the outbound leg is filtered by the transfer windows in
+// src/airports.mjs (TRANSFER_BANDS) -- it must land before the gateway
+// airport's latest-arrival time. The provider does not expose the return
+// leg's own schedule (only the outbound leg plus the bundled total price),
+// so the return leg's transfer-window fit is not verified -- an accepted
+// risk, not an oversight. Transfer-service availability itself is assumed;
+// the policy only checks time windows.
 //
 // Quotes land append-only in flight_price (src/db.mjs). The flight_search
 // ledger keeps successful quotes fresh for six days, allows no more than two
@@ -28,7 +28,6 @@ import { writeFileSync } from "node:fs";
 import {
   open,
   insertFlightPrice,
-  insertReturnSchedule,
   startFlightSearch,
   finishFlightSearch,
 } from "./db.mjs";
@@ -45,10 +44,13 @@ import { MAX_FLIGHT_STOPS } from "./flight-config.mjs";
 
 export const MONTHLY_SEARCH_LIMIT = 225; // SerpApi free-tier ceiling
 export const FLIGHT_REFRESH_DAYS = 6;
-// Return rows now contribute to the displayed price, so they must be no older
-// than the outbound fare they are combined with.
-export const RETURN_SCHEDULE_REFRESH_DAYS = FLIGHT_REFRESH_DAYS;
-export const MAX_ATTEMPTS_PER_PAIR_WINDOW = 2;
+// Disabled (2026-07): confirmed live that a "no dataset items" failure is
+// transient actor flakiness, not a genuine no-service route -- a bare retry
+// of the exact same cell succeeded immediately. Capping retries at 2 per
+// 6-day window was blocking legitimate recovery, not protecting against a
+// truly dead route. Infinity keeps flightPolicy's shape/tests intact while
+// removing the practical limit.
+export const MAX_ATTEMPTS_PER_PAIR_WINDOW = Infinity;
 // Wide enough that a summer refresh still covers the whole Nov-Apr season
 // (the current catalogue is only ~22 distinct weeks, so this cap is about
 // not querying beyond Google's ~11-month booking horizon, not about quota).
@@ -222,11 +224,12 @@ export function parseFlightResponse(j, {
   };
 }
 
-/** Combine a viable outbound and return. Production uses `separate`: both
- * halves came from one-way searches, their prices are added, and the UI can
- * truthfully identify the result as two bookings. `roundtrip` remains only
- * for validated legacy/imported rows whose return was selected through the
- * same fare token. */
+/** Combine an independently fetched outbound and return one-way leg.
+ * `separate` sums both fares and the UI truthfully identifies the result as
+ * two bookings; kept for validated legacy/imported rows and reuse by any
+ * future one-way-only provider path. Production's live round-trip search
+ * (a single fetched itinerary already IS the whole booking) uses
+ * `toRoundTripRow` instead, not this function. */
 export function combineDirections(outbound, ret, { pricingMode = "separate" } = {}) {
   const complete = outbound.price != null && ret.price != null;
   const separate = pricingMode === "separate";
@@ -263,6 +266,52 @@ export function combineDirections(outbound, ret, { pricingMode = "separate" } = 
     return_window_dropped: ret.window_dropped,
     return_date_dropped: ret.date_dropped,
     return_stops_dropped: ret.stops_dropped,
+  };
+}
+
+/** A round-trip cell's single fetched itinerary already IS the whole
+ * booking -- there is no independently fetched return leg to attach. The
+ * provider never mixes airports between legs of one round-trip search
+ * (confirmed live 2026-07: querying AMS -> GVA,LYS returns only AMS<->GVA and
+ * AMS<->LYS pairs, never a GVA-out/LYS-back mix), so the return leg's
+ * airports are always this same matched pair, reversed. Its own schedule is
+ * never exposed by the provider -- only the outbound leg plus the bundled
+ * total price -- so return_airline/return_stops/return_duration_min/
+ * return_segments stay null: an accepted gap, not a guess dressed up as data. */
+export function toRoundTripRow(cell) {
+  return {
+    origins: cell.origins,
+    dests: cell.dests,
+    gateway: cell.gateway,
+    origin_group: cell.origin_group,
+    outbound_date: cell.outbound_date,
+    return_date: cell.return_date,
+    price: cell.price,
+    price_outbound: null,
+    price_return: null,
+    pricing_mode: "roundtrip",
+    dep_airport: cell.dep_airport,
+    arr_airport: cell.arr_airport,
+    airline: cell.airline,
+    stops: cell.stops,
+    duration_min: cell.duration_min,
+    outbound_segments: cell.segments,
+    return_dep_airport: cell.arr_airport,
+    return_arr_airport: cell.dep_airport,
+    return_airline: null,
+    return_stops: null,
+    return_duration_min: null,
+    return_segments: [],
+    details_scope: "both",
+    price_level: cell.price_level ?? null,
+    candidate_count: cell.candidate_count,
+    window_dropped: cell.window_dropped,
+    date_dropped: cell.date_dropped,
+    stops_dropped: cell.stops_dropped,
+    return_candidate_count: null,
+    return_window_dropped: null,
+    return_date_dropped: null,
+    return_stops_dropped: null,
   };
 }
 
@@ -435,20 +484,6 @@ export async function runFlightRefresh({
        AND date(fetched_at) > date('now', ?)
      GROUP BY gateway, origin_group`
   );
-  const freshReturnSchedules = _db.prepare(
-    `SELECT s.* FROM flight_return_schedule s
-     WHERE s.return_date = ? AND s.config_key = ?
-       AND date(s.fetched_at) > date('now', ?)
-       AND s.rowid = (
-         SELECT s2.rowid FROM flight_return_schedule s2
-         WHERE s2.return_date = s.return_date
-           AND s2.config_key = s.config_key
-           AND s2.origin_group = s.origin_group
-           AND s2.gateway = s.gateway
-         ORDER BY s2.fetched_at DESC, s2.rowid DESC
-         LIMIT 1
-       )`
-  );
   const recentAttempts = _db.prepare(
     `SELECT COUNT(*) n FROM flight_search
      WHERE outbound_date = ? AND return_date = ?
@@ -458,7 +493,6 @@ export async function runFlightRefresh({
        AND date(attempted_at) > date('now', ?)`
   );
   const freshnessWindow = `-${FLIGHT_REFRESH_DAYS} days`;
-  const returnFreshnessWindow = `-${RETURN_SCHEDULE_REFRESH_DAYS} days`;
 
   // Infinity for apify (no self-imposed ceiling) is correct for the gating
   // comparisons below, but a bare Infinity is the wrong thing to put in any
@@ -483,8 +517,6 @@ export async function runFlightRefresh({
     recoverySearches: 0,
     broadSearches: 0,
     targetedRetries: 0,
-    returnCacheHits: 0,
-    returnCellsReused: 0,
     searched: 0,
     skipped: 0,
     failed: 0,
@@ -536,10 +568,7 @@ export async function runFlightRefresh({
           originIds,
           destIds,
           outboundDate,
-          // Both directions are one-way. Combining their prices is the only
-          // truthful fallback for providers that cannot follow Google's
-          // departure_token to retrieve returns belonging to a round trip.
-          returnDate: undefined,
+          returnDate,
           exhaustive: scope === "targeted",
         });
         if (usedProvider !== provider) {
@@ -614,9 +643,6 @@ export async function runFlightRefresh({
 
     const gateways = AIRPORT_GATEWAYS.filter((gateway) => gatewayIds.has(gateway.id));
     const pairDestinationAirportIds = [...new Set(gateways.flatMap((gateway) => gateway.airports))].join(",");
-    const requiredCellKeys = gateways.flatMap((gateway) =>
-      targetOriginGroups.map((originGroup) => `${originGroup.id}|${gateway.id}`)
-    );
     const cellsOf = (
       raw, options, originGroups = targetOriginGroups, selectedGateways = gateways,
     ) => {
@@ -779,85 +805,6 @@ export async function runFlightRefresh({
       return covered;
     };
 
-    // A return fare/schedule is shared by both arrival modes. Null-price rows
-    // are cached too: broad and focused searches both found no return inside
-    // the configured transfer window.
-    let returnCells;
-    const cachedReturnCells = new Map(
-      freshReturnSchedules
-        .all(end_date, AIRPORT_CONFIG_KEY, returnFreshnessWindow)
-        .filter((row) => {
-          const gateway = gatewayById(row.gateway);
-          const originGroup = originGroupById(row.origin_group);
-          return gatewayIds.has(row.gateway) && requestedOriginIds.includes(row.origin_group) &&
-            row.dests === gateway?.airports.join(",") &&
-            row.origins === originGroup?.airports.join(",");
-        })
-        .map((row) => [`${row.origin_group}|${row.gateway}`, {
-          ...row,
-          direction: "return",
-          outbound_date: end_date,
-          segments: JSON.parse(row.segments || "[]"),
-        }])
-    );
-    if (requiredCellKeys.every((key) => cachedReturnCells.has(key))) {
-      returnCells = new Map(requiredCellKeys.map((key) => [key, cachedReturnCells.get(key)]));
-      summary.returnCacheHits++;
-      summary.returnCellsReused += returnCells.size;
-    } else {
-      const failedReturnAttempts = recentAttempts.get(
-        end_date, end_date, AIRPORT_CONFIG_KEY, "return", primaryProvider, freshnessWindow
-      ).n;
-      if (failedReturnAttempts >= MAX_ATTEMPTS_PER_PAIR_WINDOW) {
-        summary.recentAttemptSkipped++;
-        summary.skipped++;
-        console.warn(
-          `  ! ${end_date} return leg skipped after ${failedReturnAttempts} recent failed provider attempts`
-        );
-        continue;
-      }
-      let returnSearch;
-      let returnSearchClosed = false;
-      try {
-        returnSearch = await runSearch({
-          originIds: pairDestinationAirportIds, destIds: targetOriginAirportIds,
-          outboundDate: end_date, returnDate: end_date,
-          direction: "return", arrivalMode: "standard",
-        });
-        returnCells = cellsOf(returnSearch.raw, {
-          outboundDate: end_date, returnDate: end_date,
-          direction: "return", secrets: returnSearch.secrets,
-        });
-        finishFlightSearch(_db, returnSearch.searchId,
-          [...returnCells.values()].some((cell) => cell.price != null) ? "success" : "no_result");
-        returnSearchClosed = true;
-        returnCells = await recoverMissingCoverage(returnCells, returnSearch.raw, {
-          outboundDate: end_date, returnDate: end_date,
-          direction: "return", arrivalMode: "standard",
-        });
-        for (const cell of returnCells.values()) {
-          insertReturnSchedule(_db, {
-            ...cell,
-            provider: returnSearch.usedProvider,
-            config_key: AIRPORT_CONFIG_KEY,
-          });
-        }
-      } catch (e) {
-        // runSearch finishes (and counts) its own failures; reaching here with
-        // returnSearch set means the parse failed after a successful search.
-        if (returnSearch && !returnSearchClosed) {
-          finishFlightSearch(_db, returnSearch.searchId, "failed", e.message);
-          summary.failed++;
-          summary.errors.push(e.message);
-        }
-        console.error(`  ! ${end_date} return leg failed:`, e.message);
-        if (summary.quotaExhausted) break outer;
-        await delay(DELAY_MS);
-        continue; // outbound halves are useless without the return -- retry next refresh
-      }
-      await delay(DELAY_MS);
-    }
-
     for (const mode of staleModes) {
       let outboundSearch;
       let outboundSearchClosed = false;
@@ -879,15 +826,10 @@ export async function runFlightRefresh({
           direction: "outbound", arrivalMode: mode.id,
         });
         const rows = [];
-        for (const [cellKey, outboundCell] of outboundCells) {
+        for (const [, outboundCell] of outboundCells) {
           rows.push({
-            combined: combineDirections(outboundCell, returnCells.get(cellKey), {
-              pricingMode: "separate",
-            }),
-            dropped: {
-              late: outboundCell.window_dropped,
-              early: returnCells.get(cellKey).window_dropped,
-            },
+            combined: toRoundTripRow(outboundCell),
+            dropped: { late: outboundCell.window_dropped },
           });
         }
         for (const { combined } of rows) {
@@ -907,15 +849,16 @@ export async function runFlightRefresh({
           `  ${mode.flightDate} -> ${end_date} (${mode.id}, package starts ${start_date}, via ${outboundSearch.usedProvider}): ` +
           (found.length
             ? found.map(({ combined, dropped }) =>
-                `${combined.origin_group}/${combined.gateway}=€${combined.price} separate tickets ` +
-                `${combined.dep_airport}->${combined.arr_airport}/${combined.return_dep_airport}->${combined.return_arr_airport}` +
-                (dropped.late || dropped.early ? ` (${dropped.late} late, ${dropped.early} early dropped)` : "")
+                `${combined.origin_group}/${combined.gateway}=€${combined.price} round trip ` +
+                `${combined.dep_airport}->${combined.arr_airport}` +
+                (dropped.late ? ` (${dropped.late} late dropped)` : "")
               ).join("; ")
             : "no viable flights")
         );
       } catch (e) {
-        // Same contract as the return leg: only parse failures reach here
-        // with the search row still open.
+        // runSearch finishes (and counts) its own failures; reaching here
+        // with the search row still open means parsing failed after a
+        // successful response.
         if (outboundSearch && !outboundSearchClosed) {
           finishFlightSearch(_db, outboundSearch.searchId, "failed", e.message);
           summary.failed++;

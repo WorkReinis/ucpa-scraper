@@ -26,8 +26,8 @@ test("every airport gateway covers exactly one region and has valid IATA codes",
   assert.ok(DEST_AIRPORTS.every((code) => /^[A-Z]{3}$/.test(code)));
   // Every resort in a region shares that region's gateway -- there is no
   // per-resort lookup any more, only per-region.
-  assert.deepEqual(gatewayForRegion("Pyrénées").airports, ["LDE", "TLS"]);
-  assert.deepEqual(gatewayForRegion("Alpes du Nord").airports, ["CMF", "GNB", "GVA", "LYS"]);
+  assert.deepEqual(gatewayForRegion("Pyrénées").airports, ["TLS"]);
+  assert.deepEqual(gatewayForRegion("Alpes du Nord").airports, ["GNB", "GVA", "LYS"]);
   assert.deepEqual(gatewayForRegion("Alpes du Sud").airports, ["GNB", "TRN", "MRS", "GVA", "LYS"]);
   assert.equal(gatewayForRegion("nope"), null);
 });
@@ -38,8 +38,10 @@ test("origin groups are disjoint and flatten into ORIGIN_AIRPORTS", () => {
   assert.ok(airports.every((code) => /^[A-Z]{3}$/.test(code)));
   assert.deepEqual(ORIGIN_AIRPORTS, airports);
   assert.deepEqual(originGroupById("nl").airports, ["AMS", "RTM"]);
-  assert.deepEqual(originGroupById("uk").airports, ["LHR", "LGW", "LTN", "STN", "LCY"]);
-  assert.deepEqual(originGroupById("ch").airports, ["BSL"]);
+  assert.deepEqual(originGroupById("uk").airports, ["LHR", "LGW", "LTN", "STN"]);
+  // "ch" (Basel) was retired (2026-07) -- it must resolve the same as any
+  // other unknown group now, not be silently treated as still valid.
+  assert.equal(originGroupById("ch"), null);
   assert.equal(originGroupById("nope"), null);
 });
 
@@ -78,7 +80,7 @@ test("viability windows derive from transfer duration through the bands", () => 
   // stricter cutoff there -- the window is per (gateway, airport), grouping
   // by region doesn't collapse that back to one global number per airport.
   assert.equal(latestArrivalFor("southern-alps", "GVA"), "18:30");    // 4.0h -> floor
-  assert.equal(latestArrivalFor("pyrenees", "LDE"), "21:00");         // 1.25h
+  assert.equal(latestArrivalFor("pyrenees", "TLS"), "20:00");         // 2.0h
   assert.throws(() => latestArrivalFor("northern-alps", "XXX"), /No transfer duration/);
   assert.throws(() => earliestReturnDepartureFor("nope", "GVA"), /No transfer duration/);
   // Editing durations or bands must invalidate the freshness ledger.
@@ -89,13 +91,13 @@ test("viability windows derive from transfer duration through the bands", () => 
 test("one multi-airport response is partitioned into resort-safe gateway quotes", () => {
   const response = {
     search_parameters: { engine: "google_flights" },
-    best_flights: [itinerary("LYS", 150), itinerary("TLS", 210), itinerary("LDE", 230)],
+    best_flights: [itinerary("LYS", 150), itinerary("TLS", 210), itinerary("GVA", 230)],
   };
   const pyrenees = parseFlightResponse(response, {
     outboundDate: "2026-12-05",
     returnDate: "2026-12-12",
     gateway: "pyrenees",
-    dests: ["LDE", "TLS"],
+    dests: ["TLS"],
   });
   assert.equal(pyrenees.arr_airport, "TLS");
   assert.equal(pyrenees.price, 210);
@@ -108,12 +110,11 @@ test("a mixed-origin response is split by origin group, not just gateway", () =>
     best_flights: [
       itinerary("LYS", 133, "LTN"),
       itinerary("LYS", 224, "AMS"),
-      itinerary("LYS", 199, "BSL"),
     ],
   };
   const cell = (originGroup) => parseFlightResponse(response, {
     outboundDate: "2026-12-05", returnDate: "2026-12-12",
-    gateway: "northern-alps", dests: ["CMF", "GNB", "GVA", "LYS"],
+    gateway: "northern-alps", dests: ["GNB", "GVA", "LYS"],
     originGroup, originAirports: originGroupById(originGroup).airports,
   });
   const nl = cell("nl");
@@ -124,9 +125,6 @@ test("a mixed-origin response is split by origin group, not just gateway", () =>
   const uk = cell("uk");
   assert.equal(uk.price, 133);
   assert.equal(uk.dep_airport, "LTN");
-  const ch = cell("ch");
-  assert.equal(ch.price, 199);
-  assert.equal(ch.dep_airport, "BSL");
 });
 
 test("late landings are dropped per that airport's own window", () => {
@@ -141,7 +139,7 @@ test("late landings are dropped per that airport's own window", () => {
   };
   const cell = parseFlightResponse(response, {
     outboundDate: "2026-12-05", returnDate: "2026-12-12",
-    gateway: "northern-alps", dests: ["CMF", "GNB", "GVA", "LYS"],
+    gateway: "northern-alps", dests: ["GNB", "GVA", "LYS"],
   });
   assert.equal(cell.price, 152);
   assert.equal(cell.window_dropped, 1);
@@ -161,7 +159,7 @@ test("late landings are dropped per that airport's own window", () => {
   }).price, null);
   assert.equal(parseFlightResponse(border, {
     outboundDate: "2026-12-05", returnDate: "2026-12-12",
-    gateway: "northern-alps", dests: ["CMF", "GNB", "GVA", "LYS"],
+    gateway: "northern-alps", dests: ["GNB", "GVA", "LYS"],
   }).price, 99);
 });
 
@@ -178,7 +176,7 @@ test("return direction mirrors airports and drops too-early departures", () => {
   };
   const cell = parseFlightResponse(response, {
     outboundDate: "2026-12-12", returnDate: "2026-12-12", direction: "return",
-    gateway: "northern-alps", dests: ["CMF", "GNB", "GVA", "LYS"],
+    gateway: "northern-alps", dests: ["GNB", "GVA", "LYS"],
   });
   assert.equal(cell.price, 72);
   assert.equal(cell.dep_airport, "GVA");
@@ -201,7 +199,7 @@ test("itineraries with missing leg times survive the window filter", () => {
   };
   const cell = parseFlightResponse(response, {
     outboundDate: "2026-12-05", returnDate: "2026-12-12",
-    gateway: "northern-alps", dests: ["CMF", "GNB", "GVA", "LYS"],
+    gateway: "northern-alps", dests: ["GNB", "GVA", "LYS"],
   });
   assert.equal(cell.price, 120);
   assert.equal(cell.window_dropped, 0);

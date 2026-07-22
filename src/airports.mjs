@@ -52,8 +52,16 @@ export const AIRPORT_GATEWAYS = [
     // ski-shuttle network (Altibus, Ben's Bus, FlixBus/easyBus all run those
     // two, not ZRH), and it was the least-used gateway airport in the quote
     // history that existed at the time (11 of 446 quotes).
-    airports: ["CMF", "GNB", "GVA", "LYS"],
-    transferHours: { CMF: 2.0, GNB: 2.25, GVA: 3.0, LYS: 3.0 },
+    //
+    // CMF was cut (2026-07): 0 wins out of 893 stored northern-alps quotes.
+    // GVA and LYS dominate (330/300 wins) and even GNB, the next-thinnest
+    // airport, still won 77 times through the thinnest-gateway-airport
+    // recovery pass -- but that same recovery pass, actively retrying CMF
+    // whenever it was the most under-represented airport, never once found
+    // it cheaper. Paying for a dedicated recovery search that has never paid
+    // off isn't a hedge, it's a standing cost with no observed return.
+    airports: ["GNB", "GVA", "LYS"],
+    transferHours: { GNB: 2.25, GVA: 3.0, LYS: 3.0 },
     evidence: "https://www.valdisere.com/en/prepare-for-your-stay/how-do-i-get-there/",
   },
   {
@@ -67,8 +75,13 @@ export const AIRPORT_GATEWAYS = [
   {
     id: "pyrenees",
     region: "Pyrénées",
-    airports: ["LDE", "TLS"],
-    transferHours: { LDE: 1.25, TLS: 2.0 },
+    // LDE was cut (2026-07): 0 wins out of 160 stored pyrenees quotes -- TLS
+    // took every priced one. LDE is the airport actually closer to
+    // Saint-Lary, so this is a price-only call, not a convenience one: a
+    // traveller who values the shorter transfer over the fare may still do
+    // better booking LDE directly than anything this scraper will ever show.
+    airports: ["TLS"],
+    transferHours: { TLS: 2.0 },
     evidence: "https://www.ucpa.com/destination/village-sportif/saint-lary-soulan",
   },
 ];
@@ -78,10 +91,27 @@ export const AIRPORT_GATEWAYS = [
 // provider search (departure_id takes a comma-separated list); the response
 // is partitioned back into per-group quotes. If Google omits a market from
 // that flexible search, flights.mjs makes a narrower recovery request.
+//
+// LCY was cut (2026-07): 1 win out of 418 stored uk-origin quotes -- a
+// business-oriented airport that's essentially never competitive on leisure
+// fares, but was still occupying a slot in every flexible uk-origin search.
+//
+// The "ch" (Basel, single airport BSL) origin group was retired (2026-07):
+// half of its 552 stored quotes came back with no viable fare at all (vs.
+// ~0-1% for nl/uk), and the ones that did price were disproportionately
+// expensive to reach -- Basel is thin enough a market that it routinely fell
+// out of the broad flexible search and needed its own dedicated recovery
+// search, origin-group by origin-group, mode by mode, every refresh cycle.
+// Against a total spend budget sized for this app's ~1-month lifespan, that
+// standing cost for one thin market was disproportionate. Also, unlike the
+// other origins, Basel sits close enough to the Alps that the rail
+// alternative may just be the better answer for that traveller anyway --
+// this was a product call as much as a cost one. Raw historical quotes for
+// "ch" remain in flight_price (append-only, nothing was deleted); they will
+// simply age out of v_flight_current and stop being served.
 export const ORIGIN_GROUPS = [
   { id: "nl", label: "Netherlands", airports: ["AMS", "RTM"] },
-  { id: "uk", label: "London", airports: ["LHR", "LGW", "LTN", "STN", "LCY"] },
-  { id: "ch", label: "Basel", airports: ["BSL"] },
+  { id: "uk", label: "London", airports: ["LHR", "LGW", "LTN", "STN"] },
 ];
 export const DEFAULT_ORIGIN_GROUP = "nl";
 
@@ -110,7 +140,7 @@ export const ORIGIN_AIRPORTS = ORIGIN_GROUPS.flatMap((group) => group.airports);
 // overrides: editing any of them invalidates the flight_search freshness
 // ledger, so the next refresh automatically re-quotes with the new rules.
 export const AIRPORT_CONFIG_KEY = [
-  `search:separate-one-way-pair-v5:market=${FLIGHT_SEARCH_MARKET}:max-stops=${MAX_FLIGHT_STOPS}:same-day-arrival`,
+  `search:roundtrip-v6:market=${FLIGHT_SEARCH_MARKET}:max-stops=${MAX_FLIGHT_STOPS}:same-day-arrival`,
   ORIGIN_GROUPS.map((group) => `${group.id}:${group.airports.join(",")}`).join(";"),
   ...AIRPORT_GATEWAYS.map((gateway) =>
     `${gateway.id}:${gateway.airports.map((a) => {
