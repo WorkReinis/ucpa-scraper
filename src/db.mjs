@@ -336,6 +336,7 @@ WHERE f.rowid = (
   SELECT f2.rowid FROM flight_price f2
   WHERE f2.outbound_date = f.outbound_date AND f2.return_date = f.return_date
     AND f2.gateway = f.gateway AND f2.origin_group = f.origin_group
+    AND f2.arrival_mode = f.arrival_mode
     AND (
       f2.config_key = '${SQL_AIRPORT_CONFIG_KEY}'
       OR ${SQL_ROW_STILL_COMPLIANT}

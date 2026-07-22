@@ -107,8 +107,10 @@ export const AIRPORT_GATEWAYS = [
 // other origins, Basel sits close enough to the Alps that the rail
 // alternative may just be the better answer for that traveller anyway --
 // this was a product call as much as a cost one. Raw historical quotes for
-// "ch" remain in flight_price (append-only, nothing was deleted); they will
-// simply age out of v_flight_current and stop being served.
+// "ch" remain in flight_price (append-only, nothing was deleted); a
+// legacy-tier row can still surface through v_flight_current indefinitely
+// (that fallback tier doesn't expire), so validation must recognize "ch" as
+// retired rather than flag it forever -- see RETIRED_ORIGIN_GROUP_IDS below.
 export const ORIGIN_GROUPS = [
   { id: "nl", label: "Netherlands", airports: ["AMS", "RTM"] },
   { id: "uk", label: "London", airports: ["LHR", "LGW", "LTN", "STN"] },
@@ -133,6 +135,14 @@ export const RETIRED_GATEWAY_IDS = {
   "serre-chevalier": "southern-alps",
   "queyras": "southern-alps",
 };
+
+// Origin groups cut outright (2026-07), with no absorbing replacement --
+// unlike RETIRED_GATEWAY_IDS these can't remap to a wider set, they're just
+// gone. validateOriginAssignments() (src/validate-airports.mjs) must treat a
+// stored quote against one of these ids as expected historical data, not an
+// "unknown origin group" failure -- otherwise every CI run fails forever on
+// old rows we deliberately chose to keep rather than delete.
+export const RETIRED_ORIGIN_GROUP_IDS = new Set(["ch"]); // Basel, single airport BSL
 
 export const DEST_AIRPORTS = [...new Set(AIRPORT_GATEWAYS.flatMap((gateway) => gateway.airports))];
 export const ORIGIN_AIRPORTS = ORIGIN_GROUPS.flatMap((group) => group.airports);
@@ -219,6 +229,7 @@ export function originGroupAirportAllowedSql(originGroupColumn, airportColumn) {
 export function validateOriginAssignments(quotes = []) {
   const issues = [];
   for (const quote of quotes) {
+    if (RETIRED_ORIGIN_GROUP_IDS.has(quote.origin_group)) continue;
     const group = originGroupById(quote.origin_group);
     if (!group) {
       issues.push(`unknown origin group: ${quote.origin_group ?? "missing"}`);
