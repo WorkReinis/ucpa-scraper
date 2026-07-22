@@ -90,6 +90,21 @@ test("total-price sort order follows the selected origin's quotes", () => {
   assert.deepEqual(order("uk"), ["b", "a"]);
 });
 
+test("a week with no flight quote yet never outranks a week with a real total, in either price direction", () => {
+  const quoted = { code: "quoted", start_date: "2026-12-06", price: 900, seats_left: 5, flight_quotes: { nl: { standard: { price: 200 }, early: null } } };
+  const unquoted = { code: "unquoted", start_date: "2026-12-13", price: 300, seats_left: 5, flight_quotes: {} };
+
+  const order = (sort) => sortCatalogForDisplay(
+    [unquoted, quoted].map((row) => resolveFlightQuote(row, "nl")), sort, true
+  ).map((row) => row.code);
+  // Package-only, unquoted's 300 beats quoted's 900 either direction -- but
+  // with flight costs included, unquoted's real total is simply unknown, so
+  // it must never look cheaper (price_asc) or pricier (price_desc) than a
+  // week whose total is actually known.
+  assert.deepEqual(order("price_asc"), ["quoted", "unquoted"]);
+  assert.deepEqual(order("price_desc"), ["quoted", "unquoted"]);
+});
+
 test("explicit sold-out listings always sort after bookable listings", () => {
   const bookable = { code: "available", start_date: "2027-02-01", price: 1000, seats_left: 1 };
   const soldOutCheap = { code: "sold-cheap", start_date: "2026-12-01", price: 100, seats_left: 0 };

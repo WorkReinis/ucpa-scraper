@@ -71,14 +71,21 @@ export function isSoldOut(row) {
 export function sortCatalogForDisplay(rows, sort, includeFlightCosts) {
   const priceOf = includeFlightCosts ? totalPrice : (row) => row.price;
   const direction = sort === "price_desc" ? -1 : 1;
+  const byPrice = sort === "price_asc" || sort === "price_desc";
 
   return [...rows].sort((a, b) => {
     const availabilityOrder = Number(isSoldOut(a)) - Number(isSoldOut(b));
     if (availabilityOrder !== 0) return availabilityOrder;
-    if (sort === "soonest") return a.start_date.localeCompare(b.start_date);
-    if (sort === "price_asc" || sort === "price_desc") {
-      return direction * (priceOf(a) - priceOf(b));
+    // A week with no flight quote yet isn't a €0 flight -- treating it as one
+    // made unquoted weeks look like the cheapest trips in the catalogue and
+    // flood the top of "Price ↑". Unknown cost sorts after every known total,
+    // in both price directions, the same way sold-out already outranks nothing.
+    if (byPrice && includeFlightCosts) {
+      const missingOrder = Number(!Number.isFinite(a.flight_price)) - Number(!Number.isFinite(b.flight_price));
+      if (missingOrder !== 0) return missingOrder;
     }
+    if (sort === "soonest") return a.start_date.localeCompare(b.start_date);
+    if (byPrice) return direction * (priceOf(a) - priceOf(b));
     return 0;
   });
 }
