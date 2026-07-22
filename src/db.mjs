@@ -1,5 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
-import { AIRPORT_CONFIG_KEY, gatewayAirportAllowedSql, originGroupAirportAllowedSql } from "./airports.mjs";
+import { AIRPORT_CONFIG_KEY, gatewayAirportAllowedSql, originGroupAirportAllowedSql, RETIRED_GATEWAY_IDS } from "./airports.mjs";
 
 const SQL_AIRPORT_CONFIG_KEY = AIRPORT_CONFIG_KEY.replaceAll("'", "''");
 // A row fetched under an older config_key is still fully trustworthy when it
@@ -434,6 +434,17 @@ function migrateLegacyNames(db) {
         db.exec(`ALTER TABLE flight_price ADD COLUMN ${column} ${type}`);
       }
     }
+    // The region-based restructuring merged the old per-valley gateways into
+    // wider regions (mont-blanc -> northern-alps; serre-chevalier, queyras ->
+    // southern-alps), but rows already fetched under an old id kept it in
+    // storage. catalog.mjs's flight join matches gateway to a resort's
+    // *current* region-implied id exactly, so those rows -- real, priced
+    // quotes -- stayed invisible to every resort in the merged region until
+    // their own gateway column caught up. One-time, idempotent: each UPDATE
+    // matches zero rows once done.
+    for (const [oldId, newId] of Object.entries(RETIRED_GATEWAY_IDS)) {
+      db.prepare("UPDATE flight_price SET gateway = ? WHERE gateway = ?").run(newId, oldId);
+    }
   }
   if (hasTable("flight_search")) {
     const cols = db.prepare("PRAGMA table_info(flight_search)").all().map((c) => c.name);
@@ -456,6 +467,13 @@ function migrateLegacyNames(db) {
       if (!cols.includes(column)) {
         db.exec(`ALTER TABLE flight_return_schedule ADD COLUMN ${column} INTEGER NOT NULL DEFAULT 0`);
       }
+    }
+    // Unlike flight_price, gateway is part of this table's primary key, so a
+    // remap can collide with a schedule already cached under the new id at
+    // the same (origin_group, return_date, config_key, fetched_at) --
+    // harmless to drop the stale duplicate, since a cache miss just re-fetches.
+    for (const [oldId, newId] of Object.entries(RETIRED_GATEWAY_IDS)) {
+      db.prepare("UPDATE OR IGNORE flight_return_schedule SET gateway = ? WHERE gateway = ?").run(newId, oldId);
     }
   }
   // Remove a legacy Lyon-only transport-price column. Transport-inclusive

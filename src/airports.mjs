@@ -98,7 +98,7 @@ const BY_ORIGIN_GROUP_ID = new Map(ORIGIN_GROUPS.map((group) => [group.id, group
 // subset of the new gateway's, so validating them against the wider region
 // set is strictly correct, just less exact than the cluster it was quoted
 // under. Safe to delete once no flight_price row references these ids.
-const RETIRED_GATEWAY_IDS = {
+export const RETIRED_GATEWAY_IDS = {
   "mont-blanc": "northern-alps", // Argentière/Chamonix cluster, folded into the full Alpes du Nord region
   "serre-chevalier": "southern-alps",
   "queyras": "southern-alps",
