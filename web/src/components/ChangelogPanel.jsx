@@ -1,4 +1,5 @@
-import { useEffect } from "react";
+import { useRef } from "react";
+import useModalDialog from "../useModalDialog";
 
 function formatDay(day) {
   return new Intl.DateTimeFormat(undefined, {
@@ -31,19 +32,13 @@ function EventIcon({ kind }) {
 }
 
 export default function ChangelogPanel({ open, onClose, days = [] }) {
-  useEffect(() => {
-    if (!open) return undefined;
-    const onKeyDown = (event) => {
-      if (event.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [open, onClose]);
+  const panelRef = useRef(null);
+  useModalDialog(open, onClose, panelRef);
 
   if (!open) return null;
   return (
     <div className="changelog-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <aside className="changelog-panel" role="dialog" aria-modal="true" aria-labelledby="changelog-title">
+      <aside className="changelog-panel" role="dialog" aria-modal="true" aria-labelledby="changelog-title" ref={panelRef} tabIndex={-1}>
         <header className="changelog-head">
           <div>
             <span className="changelog-eyebrow">Daily catalogue watch</span>

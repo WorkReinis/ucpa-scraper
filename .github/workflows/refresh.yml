@@ -2,8 +2,8 @@ name: Refresh UCPA catalogue
 
 on:
   schedule:
-    - cron: "15 4 * * *"   # 07:15 Riga during EEST (UTC+3)
-    - cron: "15 5 * * *"   # 07:15 Riga during EET (UTC+2)
+    - cron: "15 7 * * *"
+      timezone: Europe/Riga
   workflow_dispatch:
     inputs:
       operation:
@@ -45,27 +45,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  schedule-gate:
-    if: github.event_name == 'schedule'
-    runs-on: ubuntu-latest
-    outputs:
-      proceed: ${{ steps.check.outputs.proceed }}
-    steps:
-      - name: Check Riga local time
-        id: check
-        shell: bash
-        run: |
-          current="$(TZ="Europe/Riga" date +%H:%M)"
-          if [ "$current" = "07:15" ]; then
-            echo "proceed=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "proceed=false" >> "$GITHUB_OUTPUT"
-            echo "Skipping this cron slot - current Riga local time is $current, not 07:15."
-          fi
-
   refresh:
-    needs: [schedule-gate]
-    if: always() && (github.event_name != 'schedule' || needs.schedule-gate.outputs.proceed == 'true')
     runs-on: ubuntu-latest
     # A cold flight refresh is ~105 actor runs; the 14-day return cache reduces
     # normal fare-only cycles to ~70 before any exact-cell recovery searches.
