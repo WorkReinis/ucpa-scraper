@@ -73,5 +73,5 @@ jobs:
         shell: bash
         run: |
           echo "## UCPA Pages deployment" >> "$GITHUB_STEP_SUMMARY"
-          jq -r '"- Products: \(.products)\n- Listings: \(.listings)\n- Last scrape: \(.lastScrapedAt)\n- Flight quota: \(.flightQuota.used)/\(.flightQuota.limit)"' .refresh-summary.json >> "$GITHUB_STEP_SUMMARY"
+          jq -r '"- Products: \(.products)\n- Listings: \(.listings)\n- Last scrape: \(.lastScrapedAt)\n- Flight quota: apify \(.flightQuota.apify.used)/\(.flightQuota.apify.limit // "unlimited"), serpapi \(.flightQuota.serpapi.used)/\(.flightQuota.serpapi.limit)"' .refresh-summary.json >> "$GITHUB_STEP_SUMMARY"
           echo "- Site: ${{ steps.deployment.outputs.page_url }}" >> "$GITHUB_STEP_SUMMARY"

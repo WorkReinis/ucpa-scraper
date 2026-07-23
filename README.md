@@ -96,11 +96,19 @@ One-time setup after creating a public GitHub repository:
 
 1. Push the application to the repository's `main` branch.
 2. Run `npm run data:init` locally to seed the rolling `data` branch from the
-   current `ucpa.db` history.
+   current `ucpa.db` history. This only works once: it refuses to run again
+   once `data` already exists, so it can never be reused later to
+   accidentally overwrite scrapes CI has since published.
 3. Add `APIFY_KEY_1` (and optionally `APIFY_KEY_2..4` plus the `SERPAPI_KEY`
    fallback) under repository **Settings > Secrets and variables > Actions**.
 4. Under **Settings > Pages**, choose **GitHub Actions** as the source and run
    the **Deploy GitHub Pages** workflow once.
+
+After bootstrap, every catalogue refresh commits its `ucpa.db` onto `data`
+on top of a fresh fetch and pushes normally (no `--force`) -- `data` carries
+real history now, not a single force-pushed snapshot, so a bad publish is a
+`git revert` away from being undone, and a stale push can't silently
+overwrite newer data (git rejects it as a non-fast-forward push instead).
 
 `refresh.yml` runs daily at 07:15 Europe/Riga all year. The UCPA catalogue is
 refreshed on every scheduled run; flight requests are made only when the last
@@ -213,12 +221,14 @@ Editing a duration or the band policy re-quotes automatically on the next
 refresh.
 
 Quotes are append-only in `flight_price` (price history for free, like
-everything else here) and stay fresh for six calendar days. The ledger
-permits two failed attempts per actual provider-search key in that rolling
-window and enforces a monthly ceiling per provider (450 Apify runs, 225
-SerpApi searches). Every fallback attempt gets its own ledger row under the
-provider that was actually called. Without a current quote, the ticket keeps
-its package price and links to a manual Google Flights search.
+everything else here) and stay fresh for six calendar days. Retry attempts
+per provider-search key in that rolling window are uncapped (an earlier
+two-attempt cap was removed for blocking legitimate coverage recovery).
+Apify has no fixed monthly ceiling — it's gated only by live account credit
+(`npm run apify:screen`); SerpApi enforces a real cap of 225 searches/month.
+Every fallback attempt gets its own ledger row under the provider that was
+actually called. Without a current quote, the ticket keeps its package price
+and links to a manual Google Flights search.
 
 `npm run validate:airports` reports current-policy coverage without failing
 an ordinary catalogue-only deploy. `npm run validate:flights` is the strict

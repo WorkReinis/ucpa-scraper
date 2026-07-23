@@ -11,6 +11,17 @@ if (-not (git remote get-url origin 2>$null)) {
   throw "Git remote 'origin' is not configured yet. Create the GitHub repository and push the code first."
 }
 
+# This script is one-time bootstrap only, for a repository that has never
+# had a data branch. It orphan-force-pushes unconditionally, which is
+# exactly the pattern that once let a stale local ucpa.db silently clobber
+# newer scrapes already published by CI. Refuse to run it again once the
+# branch exists -- from that point on, publishing happens only through the
+# "Refresh UCPA catalogue" workflow's fetch/commit/push (no --force).
+git ls-remote --exit-code --heads origin data | Out-Null
+if ($LASTEXITCODE -eq 0) {
+  throw "The 'data' branch already exists on origin. This script is one-time bootstrap only -- publishing after that point happens through the 'Refresh UCPA catalogue' workflow. If you really need to reseed it deliberately, fetch and reconcile origin/data first, then push (without --force) by hand."
+}
+
 $temp = Join-Path ([System.IO.Path]::GetTempPath()) ("ucpa-data-" + [guid]::NewGuid().ToString("N"))
 $tempBranch = "data-bootstrap-" + [guid]::NewGuid().ToString("N")
 try {

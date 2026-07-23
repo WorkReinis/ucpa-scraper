@@ -8,7 +8,7 @@ import ChangelogPanel from "./components/ChangelogPanel";
 import FilterSheet from "./components/FilterSheet";
 import useFavorites from "./useFavorites";
 import { filterFavoriteWeeks, resolveFlightQuote, sortCatalogForDisplay } from "./staticCatalog";
-import { IconLayoutCompact, IconLayoutDetailed, IconPlane, IconSearch, IconTicket } from "./icons";
+import { IconLayoutCompact, IconLayoutDetailed, IconPeak, IconPlane, IconSearch } from "./icons";
 import "./App.css";
 
 function fmtTimestamp(iso) {
@@ -373,7 +373,7 @@ export default function App() {
       <footer className="app-footer">
         <div className="app-footer-row">
           <section className="refresh-tracker" aria-label="UCPA package refresh schedule">
-            <span className="refresh-tracker-icon">{IconTicket}</span>
+            <span className="refresh-tracker-icon">{IconPeak}</span>
             <div className="refresh-tracker-copy">
               <div className="refresh-tracker-head">
                 <strong>UCPA packages</strong>

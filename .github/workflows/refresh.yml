@@ -2,8 +2,8 @@ name: Refresh UCPA catalogue
 
 on:
   schedule:
-    - cron: "15 7 * * *"
-      timezone: Europe/Riga
+    - cron: "15 4 * * *"   # 07:15 Riga during EEST (UTC+3)
+    - cron: "15 5 * * *"   # 07:15 Riga during EET (UTC+2)
   workflow_dispatch:
     inputs:
       operation:
@@ -45,7 +45,27 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  schedule-gate:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    outputs:
+      proceed: ${{ steps.check.outputs.proceed }}
+    steps:
+      - name: Check Riga local time
+        id: check
+        shell: bash
+        run: |
+          current="$(TZ="Europe/Riga" date +%H:%M)"
+          if [ "$current" = "07:15" ]; then
+            echo "proceed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping this cron slot - current Riga local time is $current, not 07:15."
+          fi
+
   refresh:
+    needs: [schedule-gate]
+    if: always() && (github.event_name != 'schedule' || needs.schedule-gate.outputs.proceed == 'true')
     runs-on: ubuntu-latest
     # A cold flight refresh is ~105 actor runs; the 14-day return cache reduces
     # normal fare-only cycles to ~70 before any exact-cell recovery searches.
@@ -200,13 +220,20 @@ jobs:
         if: env.OPERATION != 'dry-run' && steps.deployment.outcome == 'success'
         shell: bash
         run: |
+          # A plain (non-force) push built on a fresh fetch of origin/data,
+          # not the copy restored at job start 10-20 minutes earlier: if data
+          # moved since then (another publish, or a manual push) this is
+          # rejected as non-fast-forward instead of silently overwriting
+          # newer history. Real commits accumulate on data now instead of a
+          # single force-pushed orphan snapshot, so a bad publish is a
+          # `git revert` away from being undone.
           cp ucpa.db /tmp/ucpa.db
-          git switch --orphan data-publish
-          git rm -rf --ignore-unmatch .
+          git fetch origin data
+          git switch -C data-publish origin/data
           cp /tmp/ucpa.db ucpa.db
-          git add -f ucpa.db
+          git add ucpa.db
           git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "refresh scraper database"
-          git push --force origin HEAD:data
+          git push origin HEAD:data
 
       - name: Job summary
         if: always() && env.OPERATION != 'dry-run'
