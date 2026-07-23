@@ -1,4 +1,5 @@
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
+import useModalDialog from "../useModalDialog";
 
 // Phone-only bottom sheet that hosts the real FilterPanel. Modeled on
 // ChangelogPanel (backdrop click / Escape to close, role=dialog), but adds the
@@ -6,24 +7,7 @@ import { useEffect, useRef } from "react";
 // body scroll while open and returns focus to whatever opened it on close.
 export default function FilterSheet({ open, onClose, title = "Filters", count = 0, resultCount, onClearAll, children }) {
   const panelRef = useRef(null);
-  const lastFocused = useRef(null);
-
-  useEffect(() => {
-    if (!open) return undefined;
-    lastFocused.current = document.activeElement;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    const onKeyDown = (event) => {
-      if (event.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKeyDown);
-    panelRef.current?.focus();
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      document.body.style.overflow = previousOverflow;
-      lastFocused.current?.focus?.();
-    };
-  }, [open, onClose]);
+  useModalDialog(open, onClose, panelRef);
 
   if (!open) return null;
   return (
