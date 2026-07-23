@@ -263,7 +263,7 @@ export default function App() {
         )}
 
         <div className="app-body">
-          {meta && (
+          {meta ? (
             <FilterPanel
               meta={meta}
               value={filters}
@@ -275,6 +275,19 @@ export default function App() {
               onFavOnlyChange={setFavOnly}
               favCount={favorites.length}
             />
+          ) : (
+            // Reserve the sidebar's grid column from the very first paint.
+            // Without this the skeleton `main` auto-places into column 1 and
+            // then jumps to column 2 the moment filters.json lands and the real
+            // panel appears -- the double-flash of skeletons users noticed.
+            <aside className="filter-panel filter-panel--loading" aria-hidden="true">
+              <div className="fp-skel fp-skel-title" />
+              <div className="fp-skel fp-skel-row" />
+              <div className="fp-skel fp-skel-row" />
+              <div className="fp-skel fp-skel-row" />
+              <div className="fp-skel fp-skel-row" />
+              <div className="fp-skel fp-skel-row" />
+            </aside>
           )}
 
           <main className={`results${loading ? " results-loading" : ""}`}>

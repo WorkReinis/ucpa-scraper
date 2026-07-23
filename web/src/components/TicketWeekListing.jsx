@@ -143,8 +143,8 @@ export default function TicketWeekListing({ d, includeFlightCosts = false, early
             {soldOut && <span className="ticket-stamp ticket-stamp-sold-out">Sold out</span>}
           </div>
           <div className="ticket-hero">
-            <div>
-              <h3 className="ticket-resort">{d.resort}</h3>
+            <div className="ticket-hero-main">
+              <h3 className="ticket-resort" title={d.resort}>{d.resort}</h3>
               <div className="ticket-region">{d.region}</div>
             </div>
             <div className="ticket-when">
