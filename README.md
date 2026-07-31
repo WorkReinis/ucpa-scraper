@@ -175,7 +175,7 @@ with [SerpApi](https://serpapi.com) as automatic fallback. Put keys in
 ```
 APIFY_KEY_1=your-apify-token
 APIFY_KEY_2=...            # optional extra accounts; any APIFY_KEY_* is discovered locally
-APIFY_KEY_5=...            # the hosted workflow currently exposes keys 1 through 5
+APIFY_KEY_6=...            # the hosted workflow currently exposes keys 1 through 6
 SERPAPI_KEY=your-key-here  # optional fallback
 ```
 
