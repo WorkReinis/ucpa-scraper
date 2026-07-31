@@ -196,6 +196,21 @@ export function originGroupById(id) {
   return BY_ORIGIN_GROUP_ID.get(id) ?? null;
 }
 
+/** Parse the workflow/CLI origin selector. "all" and an unset value both
+ *  mean the complete active ORIGIN_GROUPS list, represented by undefined so
+ *  consumers keep deriving that list from configuration rather than
+ *  hard-coding today's group ids. */
+export function parseOriginGroupIds(value) {
+  const ids = String(value ?? "")
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean);
+  if (!ids.length || (ids.length === 1 && ids[0].toLowerCase() === "all")) {
+    return undefined;
+  }
+  return ids;
+}
+
 export function gatewayCaseSql(column) {
   const clauses = AIRPORT_GATEWAYS.map((gateway) =>
     `WHEN '${gateway.region.replaceAll("'", "''")}' THEN '${gateway.id}'`

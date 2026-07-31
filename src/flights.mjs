@@ -36,6 +36,7 @@ import { wholePrice } from "./validation.mjs";
 import {
   AIRPORT_CONFIG_KEY, AIRPORT_GATEWAYS, DEST_AIRPORTS, ORIGIN_GROUPS,
   earliestReturnDepartureFor, gatewayById, gatewayForRegion, latestArrivalFor, originGroupById,
+  parseOriginGroupIds,
 } from "./airports.mjs";
 import {
   searchWithProvider as providerSearchWithProvider, configuredProviders,
@@ -890,10 +891,7 @@ export async function runFlightRefresh({
 // (`node src/flights.mjs`), not when imported by src/server.mjs.
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   try {
-    const originGroupIds = process.env.FLIGHT_ORIGIN_GROUPS
-      ?.split(",")
-      .map((value) => value.trim())
-      .filter(Boolean);
+    const originGroupIds = parseOriginGroupIds(process.env.FLIGHT_ORIGIN_GROUPS);
     const summary = await runFlightRefresh({ originGroupIds });
     writeFileSync(".flight-summary.json", `${JSON.stringify(summary, null, 2)}\n`);
     console.log(JSON.stringify(summary));

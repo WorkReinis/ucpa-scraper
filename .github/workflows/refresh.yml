@@ -62,7 +62,10 @@ jobs:
       APIFY_KEY_4: ${{ secrets.APIFY_KEY_4 }}
       APIFY_KEY_5: ${{ secrets.APIFY_KEY_5 }}
       APIFY_KEY_6: ${{ secrets.APIFY_KEY_6 }}
-      FLIGHT_ORIGIN_GROUPS: ${{ inputs.flight_origins == 'all' && '' || inputs.flight_origins }}
+      # Keep the explicit "all" sentinel: the CLI expands it to the active
+      # ORIGIN_GROUPS. An `&& '' || ...` expression cannot produce an empty
+      # string in Actions because the empty branch is falsey.
+      FLIGHT_ORIGIN_GROUPS: ${{ inputs.flight_origins }}
       FLIGHT_PROVIDER: ${{ inputs.flight_provider == 'auto' && '' || inputs.flight_provider }}
       SCRAPE_DIAGNOSTICS_DIR: .scrape-diagnostics
     steps:

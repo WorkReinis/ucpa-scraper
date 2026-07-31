@@ -5,6 +5,7 @@ import { getWeeksData } from "./catalog.mjs";
 import { flightQuoteIssues } from "./validation.mjs";
 import {
   AIRPORT_CONFIG_KEY, AIRPORT_GATEWAYS, ORIGIN_GROUPS, gatewayById, gatewayForRegion,
+  parseOriginGroupIds,
   validateOriginAssignments, validateResortAirportAssignments,
 } from "./airports.mjs";
 import { ARRIVAL_MODES, FLIGHT_MONTHS_AHEAD } from "./flights.mjs";
@@ -202,8 +203,7 @@ export function validateAirportPairings(db) {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const db = open();
   const result = validateAirportPairings(db);
-  const requestedOrigins = process.env.FLIGHT_ORIGIN_GROUPS
-    ?.split(",").map((value) => value.trim()).filter(Boolean);
+  const requestedOrigins = parseOriginGroupIds(process.env.FLIGHT_ORIGIN_GROUPS);
   const coverage = flightCoverageReport(db, { originGroupIds: requestedOrigins });
   for (const gateway of AIRPORT_GATEWAYS) {
     console.log(`${gateway.region} [${gateway.id}]: ${gateway.airports.join(", ")}`);

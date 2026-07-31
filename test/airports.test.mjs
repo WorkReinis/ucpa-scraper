@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {
   AIRPORT_CONFIG_KEY, AIRPORT_GATEWAYS, DEST_AIRPORTS, ORIGIN_AIRPORTS, ORIGIN_GROUPS,
   TRANSFER_BANDS, earliestReturnDepartureFor, gatewayForRegion, latestArrivalFor,
-  originGroupById, validateOriginAssignments, validateResortAirportAssignments,
+  originGroupById, parseOriginGroupIds, validateOriginAssignments, validateResortAirportAssignments,
 } from "../src/airports.mjs";
 import { parseFlightResponse } from "../src/flights.mjs";
 
@@ -43,6 +43,15 @@ test("origin groups are disjoint and flatten into ORIGIN_AIRPORTS", () => {
   // other unknown group now, not be silently treated as still valid.
   assert.equal(originGroupById("ch"), null);
   assert.equal(originGroupById("nope"), null);
+});
+
+test("workflow origin selection treats all as the active configured groups", () => {
+  assert.equal(parseOriginGroupIds(undefined), undefined);
+  assert.equal(parseOriginGroupIds(""), undefined);
+  assert.equal(parseOriginGroupIds("all"), undefined);
+  assert.equal(parseOriginGroupIds(" ALL "), undefined);
+  assert.deepEqual(parseOriginGroupIds("nl"), ["nl"]);
+  assert.deepEqual(parseOriginGroupIds("nl, uk"), ["nl", "uk"]);
 });
 
 test("transfer bands are complete, monotone, and floor-terminated", () => {
