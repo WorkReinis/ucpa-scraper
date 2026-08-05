@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   activityFilterFromUrl, isOutOfScope, listingApiUrl, parseApiItem,
+  repairRegionFromHistory,
 } from "../src/listing.mjs";
 import { productIssues } from "../src/validation.mjs";
 
@@ -79,4 +80,26 @@ test("family stays are out of scope, adult stays are not", () => {
   // Out of scope is not the same as malformed: the row itself is still valid.
   const family = parseApiItem({ ...item, product_age_min: 3, product_age_max: 77 });
   assert.deepEqual(productIssues(family), []);
+});
+
+test("a generic region is repaired only from an unchanged trusted product", () => {
+  const row = parseApiItem({ ...item, geographical_landscape: "FRANCE" });
+  const repaired = repairRegionFromHistory(row, {
+    resort: row.resort, region: "Alpes du Nord",
+  });
+  assert.equal(repaired.row.region, "Alpes du Nord");
+  assert.equal(repaired.repair.rawRegion, "FRANCE");
+  assert.deepEqual(productIssues(repaired.row), []);
+
+  const moved = repairRegionFromHistory(row, {
+    resort: "Tignes", region: "Alpes du Nord",
+  });
+  assert.equal(moved.row.region, "FRANCE");
+  assert.equal(moved.repair, null);
+
+  const untrusted = repairRegionFromHistory(row, {
+    resort: row.resort, region: "FRANCE",
+  });
+  assert.equal(untrusted.row.region, "FRANCE");
+  assert.equal(untrusted.repair, null);
 });

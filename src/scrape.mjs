@@ -24,7 +24,10 @@ import { fetchActivityProducts } from "./listing.mjs";
 import { fetchWeeks } from "./weeks.mjs";
 import { parseDetails } from "./details.mjs";
 import { findUnknownCategories } from "./categories.mjs";
-import { assertDetailFailureRate, detailIssues, sourceIssues } from "./validation.mjs";
+import {
+  assertDetailFailureRate, detailIssues, sourceIssues,
+  sourceWarnings as sourceWarningMessages,
+} from "./validation.mjs";
 import { writeDiagnostic } from "./diagnostics.mjs";
 
 // --- config ----------------------------------------------------------------
@@ -99,8 +102,8 @@ export async function warmImageVariants(imageUrls) {
 
 /** Every product for one listing source, straight off UCPA's product API.
  *  See src/listing.mjs for why the listing HTML is no longer read here. */
-async function crawl(base) {
-  const result = await fetchActivityProducts(base, { ua: UA });
+async function crawl(base, previousProduct) {
+  const result = await fetchActivityProducts(base, { ua: UA, previousProduct });
   const skipped = result.excluded.length > 0
     ? `, ${result.excluded.length} non-adult skipped`
     : "";
@@ -113,11 +116,21 @@ async function crawl(base) {
     const tag = new URL(base).pathname.split("/").at(-1);
     writeDiagnostic(`${tag}-invalid-products`, result.invalid, "json");
   }
+  for (const repair of result.repairs) {
+    console.warn(
+      `  ! repaired region: ${repair.code} ${repair.rawRegion ?? "missing"} -> ${repair.repairedRegion}`
+    );
+  }
+  if (result.repairs.length > 0) {
+    const tag = new URL(base).pathname.split("/").at(-1);
+    writeDiagnostic(`${tag}-repaired-products`, result.repairs, "json");
+  }
 
   return {
     rows: result.rows,
     candidateCount: result.candidateCount,
     unparseableCount: result.unparseableCount,
+    repairs: result.repairs,
   };
 }
 
@@ -132,15 +145,19 @@ export async function runScrape({ dry = false, db, strict = false } = {}) {
   const _db = db ?? open();
   const collected = new Map();
   const sourceFailures = [];
+  const sourceWarnings = [];
   const sourceSnapshots = [];
   const previousSourceCount = _db.prepare(
     `SELECT product_count FROM source_snapshot
      WHERE source_url = ? ORDER BY run_id DESC LIMIT 1`
   );
+  const previousProduct = _db.prepare(
+    "SELECT resort, region FROM product WHERE code = ?"
+  );
   for (const src of SOURCES) {
     console.log(`\n${src}`);
     try {
-      const result = await crawl(src);
+      const result = await crawl(src, (code) => previousProduct.get(code));
       const snapshot = {
         source: src,
         count: result.rows.length,
@@ -153,6 +170,16 @@ export async function runScrape({ dry = false, db, strict = false } = {}) {
         previousCount: previousSourceCount.get(src)?.product_count ?? null,
       });
       if (issues.length > 0) sourceFailures.push({ source: src, error: issues.join("; ") });
+      const warnings = sourceWarningMessages(snapshot);
+      if (warnings.length > 0) {
+        sourceWarnings.push({ source: src, warning: warnings.join("; ") });
+      }
+      for (const repair of result.repairs) {
+        sourceWarnings.push({
+          source: src,
+          warning: `${repair.code}: repaired region ${repair.rawRegion ?? "missing"} -> ${repair.repairedRegion}`,
+        });
+      }
       for (const r of result.rows) collected.set(r.code, r);
     } catch (e) {
       console.error("  ! failed:", e.message);
@@ -178,12 +205,16 @@ export async function runScrape({ dry = false, db, strict = false } = {}) {
       `strict scrape rejected ${sourceFailures.length} source failure(s): ` +
       sourceFailures.map((failure) => failure.source).join(", ")
     );
-    error.summary = { products: rows.length, sourceFailures, sourceSnapshots, detailFailures: [] };
+    error.summary = {
+      products: rows.length, sourceFailures, sourceWarnings, sourceSnapshots, detailFailures: [],
+    };
     throw error;
   }
 
   if (dry) {
-    return { dry: true, products: rows.length, rows, sourceFailures, sourceSnapshots };
+    return {
+      dry: true, products: rows.length, rows, sourceFailures, sourceWarnings, sourceSnapshots,
+    };
   }
 
   const knownImageUrls = new Set(
@@ -226,7 +257,9 @@ export async function runScrape({ dry = false, db, strict = false } = {}) {
       ? assertDetailFailureRate(detailFailures.length, rows.length)
       : (rows.length === 0 ? 1 : detailFailures.length / rows.length);
   } catch (error) {
-    error.summary = { products: rows.length, sourceFailures, sourceSnapshots, detailFailures };
+    error.summary = {
+      products: rows.length, sourceFailures, sourceWarnings, sourceSnapshots, detailFailures,
+    };
     throw error;
   }
 
@@ -261,7 +294,8 @@ export async function runScrape({ dry = false, db, strict = false } = {}) {
 
   return {
     dry: false, runId, products: rows.length, weeks: weeks.length,
-    details: details.size, detailFailureRate, unknownCategories, sourceFailures, sourceSnapshots, detailFailures,
+    details: details.size, detailFailureRate, unknownCategories,
+    sourceFailures, sourceWarnings, sourceSnapshots, detailFailures,
   };
 }
 

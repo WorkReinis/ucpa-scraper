@@ -199,6 +199,7 @@ jobs:
             .flight-coverage.json
           retention-days: 14
           if-no-files-found: ignore
+          include-hidden-files: true
 
       - name: Publish rolling data branch
         if: env.OPERATION != 'dry-run' && steps.deployment.outcome == 'success'
@@ -225,7 +226,7 @@ jobs:
         run: |
           echo "## UCPA scheduled refresh" >> "$GITHUB_STEP_SUMMARY"
           if test -f .scrape-summary.json; then
-            jq -r '"- Catalogue: \(if .error then "failed - " + .error else "passed" end)\n- Products: \(.products // 0)\n- Source failures: \(.sourceFailures // [] | length)\n- Detail warnings: \(.detailFailures // [] | length)"' .scrape-summary.json >> "$GITHUB_STEP_SUMMARY"
+            jq -r '"- Catalogue: \(if .error then "failed - " + .error else "passed" end)\n- Products: \(.products // 0)\n- Source failures: \(.sourceFailures // [] | length)\n- Source warnings: \(.sourceWarnings // [] | length)\n- Detail warnings: \(.detailFailures // [] | length)"' .scrape-summary.json >> "$GITHUB_STEP_SUMMARY"
           fi
           if test -f .refresh-summary.json; then
             jq -r '"- Listings: \(.listings)\n- Last scrape: \(.lastScrapedAt)\n- Last flight check: \(.lastFlightsRefreshAt)\n- Flight quota: apify \(.flightQuota.apify.used)/\(.flightQuota.apify.limit), serpapi \(.flightQuota.serpapi.used)/\(.flightQuota.serpapi.limit)\n- Unknown category groups: \(.unknownCategoryGroups)"' .refresh-summary.json >> "$GITHUB_STEP_SUMMARY"

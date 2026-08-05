@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  assertDetailFailureRate, detailIssues, flightQuoteIssues, productIssues, sourceIssues, wholePrice,
+  assertDetailFailureRate, detailIssues, flightQuoteIssues, productIssues,
+  sourceIssues, sourceWarnings, toleratedUnparseableCount, wholePrice,
 } from "../src/validation.mjs";
 import { redactDiagnostic } from "../src/diagnostics.mjs";
 
@@ -29,10 +30,15 @@ test("product validation quarantines missing, unknown, and corrupted core fields
   assert.ok(issues.includes("invalid package price"));
 });
 
-test("source validation catches partial loss and every unparseable candidate", () => {
+test("source validation catches partial loss and tolerates bounded quarantine", () => {
   assert.deepEqual(sourceIssues({ count: 90, previousCount: 100, unparseableCount: 0 }), []);
   assert.ok(sourceIssues({ count: 84, previousCount: 100, unparseableCount: 0 })[0].includes("dropped"));
   assert.ok(sourceIssues({ count: 100, previousCount: 100, unparseableCount: 1 })[0].includes("could not be parsed"));
+  const bounded = { count: 122, previousCount: 122, candidateCount: 128, unparseableCount: 2 };
+  assert.equal(toleratedUnparseableCount(128), 2);
+  assert.deepEqual(sourceIssues(bounded), []);
+  assert.match(sourceWarnings(bounded)[0], /quarantined/);
+  assert.match(sourceIssues({ ...bounded, unparseableCount: 3 })[0], /tolerance 2/);
 });
 
 test("detail completeness and failure-rate gates reject silent empty parsing", () => {

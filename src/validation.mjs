@@ -4,6 +4,8 @@ import { LEVEL_TIERS } from "./levels.mjs";
 
 export const MAX_CATALOGUE_DROP_RATE = 0.15;
 export const MAX_DETAIL_FAILURE_RATE = 0.10;
+export const MAX_UNPARSEABLE_RATE = 0.02;
+export const MIN_UNPARSEABLE_TOLERANCE = 2;
 
 const KNOWN_ACTIVITIES = new Set([...ACTIVITIES, "Ski ou snowboard"]);
 
@@ -30,15 +32,38 @@ export function productIssues(row) {
   return issues;
 }
 
-export function sourceIssues({ count, previousCount, unparseableCount }) {
+export function toleratedUnparseableCount(candidateCount) {
+  if (!Number.isInteger(candidateCount) || candidateCount <= 0) return 0;
+  return Math.max(
+    MIN_UNPARSEABLE_TOLERANCE,
+    Math.floor(candidateCount * MAX_UNPARSEABLE_RATE)
+  );
+}
+
+export function sourceIssues({ count, previousCount, unparseableCount, candidateCount }) {
   const issues = [];
   if (count === 0) issues.push("no products returned");
-  if (unparseableCount > 0) issues.push(`${unparseableCount} product card(s) could not be parsed`);
+  const tolerance = toleratedUnparseableCount(candidateCount);
+  if (unparseableCount > tolerance) {
+    issues.push(
+      `${unparseableCount} product card(s) could not be parsed (tolerance ${tolerance})`
+    );
+  }
   if (previousCount > 0 && count < previousCount * (1 - MAX_CATALOGUE_DROP_RATE)) {
     const drop = Math.round((1 - count / previousCount) * 100);
     issues.push(`product count dropped ${drop}% (${previousCount} -> ${count})`);
   }
   return issues;
+}
+
+export function sourceWarnings({ unparseableCount, candidateCount }) {
+  const tolerance = toleratedUnparseableCount(candidateCount);
+  if (unparseableCount > 0 && unparseableCount <= tolerance) {
+    return [
+      `${unparseableCount} product card(s) quarantined within tolerance ${tolerance}`,
+    ];
+  }
+  return [];
 }
 
 export function detailIssues(details) {

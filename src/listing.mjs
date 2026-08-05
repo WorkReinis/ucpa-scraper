@@ -21,6 +21,7 @@
 // page by hand.
 
 import { productIssues, wholePrice } from "./validation.mjs";
+import { KNOWN_REGIONS } from "./categories.mjs";
 
 const API_BASE = "https://www.ucpa.com/api/products";
 
@@ -123,6 +124,35 @@ export function parseApiItem(item) {
 }
 
 /**
+ * Repair a transient bad region from the last trusted row for the same
+ * product. The resort must be unchanged: if UCPA really moved or renamed a
+ * product, retaining its old region would be more dangerous than quarantining
+ * it for one run.
+ */
+export function repairRegionFromHistory(row, previous) {
+  if (!row || KNOWN_REGIONS.includes(row.region)) return { row, repair: null };
+  if (
+    !previous ||
+    previous.resort !== row.resort ||
+    !KNOWN_REGIONS.includes(previous.region)
+  ) {
+    return { row, repair: null };
+  }
+
+  return {
+    row: { ...row, region: previous.region },
+    repair: {
+      code: row.code,
+      url: row.url,
+      resort: row.resort,
+      rawRegion: row.region,
+      repairedRegion: previous.region,
+      reason: "last trusted row for unchanged product and resort",
+    },
+  };
+}
+
+/**
  * Every product for one listing source, following `start` to the end.
  *
  * `count` is only present on the first page's response -- reading it off a
@@ -132,12 +162,13 @@ export function parseApiItem(item) {
  * to "walk until exhausted" rather than to a silent truncation.
  */
 export async function fetchActivityProducts(sourceUrl, {
-  ua, fetchImpl = fetch, delayMs = 400, maxPages = 80,
+  ua, fetchImpl = fetch, delayMs = 400, maxPages = 80, previousProduct,
 } = {}) {
   const { duration, activity } = activityFilterFromUrl(sourceUrl);
   const rows = [];
   const invalid = [];
   const excluded = [];
+  const repairs = [];
   const seen = new Set();
   let start = 0;
   let total = null;
@@ -158,7 +189,7 @@ export async function fetchActivityProducts(sourceUrl, {
     if (search.items.length === 0) break;
 
     for (const item of search.items) {
-      const row = parseApiItem(item);
+      let row = parseApiItem(item);
       if (row && seen.has(row.code)) continue;
       // Deliberately excluded, so it must not land in `invalid` -- that feeds
       // sourceIssues(), which treats any unparseable card as a source failure.
@@ -166,6 +197,11 @@ export async function fetchActivityProducts(sourceUrl, {
         seen.add(row.code);
         excluded.push(row);
         continue;
+      }
+      if (row && previousProduct) {
+        const resolution = repairRegionFromHistory(row, previousProduct(row.code));
+        row = resolution.row;
+        if (resolution.repair) repairs.push(resolution.repair);
       }
       const issues = row ? productIssues(row) : ["API item carried no /sejour/ URL"];
       if (issues.length === 0) {
@@ -189,5 +225,6 @@ export async function fetchActivityProducts(sourceUrl, {
     unparseableCount: invalid.length,
     invalid,
     excluded,
+    repairs,
   };
 }
