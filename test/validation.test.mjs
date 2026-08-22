@@ -30,6 +30,10 @@ test("product validation quarantines missing, unknown, and corrupted core fields
   assert.ok(issues.includes("invalid package price"));
 });
 
+test("a missing level (UCPA didn't return expertise_level) is not an unknown-level issue", () => {
+  assert.deepEqual(productIssues({ ...validProduct, level: null }), []);
+});
+
 test("source validation catches partial loss and tolerates bounded quarantine", () => {
   assert.deepEqual(sourceIssues({ count: 90, previousCount: 100, unparseableCount: 0 }), []);
   assert.ok(sourceIssues({ count: 84, previousCount: 100, unparseableCount: 0 })[0].includes("dropped"));

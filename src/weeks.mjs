@@ -22,6 +22,19 @@ export function extractReserveUrl(html) {
   return src.startsWith("http") ? src : `https://www.ucpa.com${src}`;
 }
 
+// When a product genuinely has no bookable weeks right now (fully booked, or
+// not yet on sale), UCPA renders the reserve widget with its state inlined
+// instead of a fetchable `src`: <amp-state id="reserve">
+// <script type="application/json">{"noOffersState":"complete"}</script>
+// </amp-state> (also seen: "soon_available"). That's a legitimate zero-weeks
+// signal, not a broken page -- confirmed live against 30838 and others.
+const NO_OFFERS_RE = /<amp-state\s+id="reserve"[^>]*>\s*<script type="application\/json">\s*\{"noOffersState":/;
+
+/** True if the page's reserve widget explicitly declares zero current offers. */
+export function hasNoOffersState(html) {
+  return NO_OFFERS_RE.test(html);
+}
+
 /** "29/11/2026" -> "2026-11-29". Built from dF rather than the unix `date`
  *  field so there's no timezone rounding to get wrong. */
 function isoFromDF(dF) {
@@ -131,6 +144,7 @@ export async function fetchWeeks(code, productUrl, ua) {
 
   const reserveUrl = extractReserveUrl(html);
   if (!reserveUrl) {
+    if (hasNoOffersState(html)) return { html, weeks: [] };
     writeDiagnostic(`${code}-missing-reserve-state`, html, "html");
     throw new Error(`no reserve state on ${productUrl} -- page layout may have changed`);
   }

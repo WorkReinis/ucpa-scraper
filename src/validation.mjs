@@ -23,7 +23,11 @@ export function productIssues(row) {
   if (!row.resort?.trim()) issues.push("missing resort");
   if (!row.region?.trim()) issues.push("missing region");
   if (!KNOWN_ACTIVITIES.has(row.activity)) issues.push(`unknown activity: ${row.activity ?? "null"}`);
-  if (!Object.hasOwn(LEVEL_TIERS, row.level)) issues.push(`unknown level: ${row.level ?? "null"}`);
+  // A missing level (UCPA simply didn't return expertise_level) isn't a bad
+  // scrape -- same as the leaked-string entries in LEVEL_TIERS, it's meant to
+  // fall back to "Unrated" (src/levels.mjs tierOf()) rather than block the
+  // product from being catalogued at all.
+  if (row.level != null && !Object.hasOwn(LEVEL_TIERS, row.level)) issues.push(`unknown level: ${row.level}`);
   if (!KNOWN_REGIONS.includes(row.region)) issues.push(`unknown region: ${row.region ?? "null"}`);
   if (!Number.isInteger(row.price) || row.price <= 0) issues.push("invalid package price");
   if (row.list_price != null && (!Number.isInteger(row.list_price) || row.list_price <= 0)) {
