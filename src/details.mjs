@@ -15,12 +15,49 @@ function exactHeading($, tag, text) {
 
 function listAfterHeading($, text) {
   const h4 = exactHeading($, "h4", text).first();
-  if (!h4.length) return [];
-  return h4
+  if (!h4.length) return { found: false, items: [] };
+  return {
+    found: true,
+    items: h4
     .siblings("ul")
     .find("li")
     .map((_, li) => $(li).text().trim())
-    .get();
+    .get(),
+  };
+}
+
+function textWithBreaks(element) {
+  const withLines = (element.html() || "").replace(/<br\s*\/?\s*>/gi, "\n");
+  const parsed = cheerio.load(`<div>${withLines}</div>`);
+  return parsed("body > div").first().text().trim();
+}
+
+function accommodationDetails($) {
+  const standardHeading = $("#hebergement-section h2").first();
+  const standard = standardHeading.next("p").text().trim();
+  if (standard) return { found: true, value: standard };
+
+  // Circuit/itinerant products use an accordion rather than the standard
+  // sports-centre section. Its content is a div nested immediately after an
+  // exact "Hébergement" h4.
+  const circuitHeading = exactHeading($, "h4", "Hébergement").first();
+  const circuit = textWithBreaks(circuitHeading.next("div"));
+  if (circuit) return { found: true, value: circuit };
+
+  // A few partner-run circuits only carry one accommodation sentence inside
+  // "Informations importantes". Preserve that useful sentence without
+  // treating the entire contact/parking block as accommodation prose.
+  const partnerBlock = $("div.custom-color").filter((_, element) => {
+    const ownText = $(element).clone().children().remove().end().text();
+    return /HÉBERGEMENT\s*:/i.test(ownText);
+  }).first();
+  if (partnerBlock.length) {
+    const text = textWithBreaks(partnerBlock);
+    const match = text.match(/HÉBERGEMENT\s*:\s*([^\n]+)/i);
+    if (match?.[1]?.trim()) return { found: true, value: match[1].trim() };
+  }
+
+  return { found: false, value: null };
 }
 
 export function parseDetails(html) {
@@ -35,12 +72,15 @@ export function parseDetails(html) {
   // WebP/AVIF through f_auto.
   const image_url = scrapedImageUrl?.replace("/image/upload/f_auto/t_UCPA/", "/image/upload/") ?? null;
 
-  const includes = listAfterHeading($, "Inclus");
-  const excludes = listAfterHeading($, "Non Inclus");
-  const options = listAfterHeading($, "En option");
+  const includedSection = listAfterHeading($, "Inclus");
+  const excludedSection = listAfterHeading($, "Non Inclus");
+  const optionsSection = listAfterHeading($, "En option");
+  const includes = includedSection.items;
+  const excludes = excludedSection.items;
+  const options = optionsSection.items;
 
-  const accomH2 = $("#hebergement-section h2").first();
-  const accommodation = accomH2.next("p").text().trim() || null;
+  const accommodationField = accommodationDetails($);
+  const accommodation = accommodationField.value;
 
   const encadrementH4 = exactHeading($, "h4", "Encadrement").first();
   const encadrement = encadrementH4.next("div").text().trim() || null;
@@ -49,7 +89,19 @@ export function parseDetails(html) {
 
   return {
     includes, excludes, options, accommodation, encadrement, instructor_hours, image_url,
-    instruction_type: classifyInstruction(instructor_hours),
+    instruction_type: classifyInstruction(instructor_hours, encadrement),
+    // Keep section presence separate from parsed values. An empty optional
+    // list can be real, while a missing heading means this page used a layout
+    // we did not parse. The DB updater uses these flags to save good partial
+    // fields without erasing older known-good values on a parser regression.
+    field_presence: {
+      image_url: Boolean(scrapedImageUrl),
+      includes: includedSection.found && includes.length > 0,
+      excludes: excludedSection.found,
+      options: optionsSection.found,
+      accommodation: accommodationField.found,
+      encadrement: Boolean(encadrement),
+    },
   };
 }
 
@@ -60,8 +112,12 @@ export function parseDetails(html) {
  * 23-25h (full week-long coaching, including mountain-guide-led hors-piste
  * and splitboard programs). The 15h cutoff sits in the gap between them.
  */
-function classifyInstruction(hours) {
-  if (hours == null) return "Individual (no coaching)";
+function classifyInstruction(hours, description) {
+  if (hours == null) {
+    return /pas d'encadrement|en autonomie/i.test(description || "")
+      ? "Individual (no coaching)"
+      : null;
+  }
   if (hours <= 15) return "Half-day coaching";
   return "Full coaching";
 }

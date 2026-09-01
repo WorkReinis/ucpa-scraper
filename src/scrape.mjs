@@ -18,7 +18,8 @@
 import { fileURLToPath } from "node:url";
 import fs from "node:fs";
 import {
-  open, startRun, upsert, finishRun, upsertWeek, setProductDetails, insertSourceSnapshot,
+  open, startRun, upsert, finishRun, upsertWeek, setProductDetails,
+  markProductDetailsFailure, insertSourceSnapshot, insertScrapeIssue,
 } from "./db.mjs";
 import { fetchActivityProducts } from "./listing.mjs";
 import { fetchWeeks } from "./weeks.mjs";
@@ -241,9 +242,11 @@ export async function runScrape({ dry = false, db, strict = false } = {}) {
       if (issues.length > 0) {
         writeDiagnostic(`${r.code}-incomplete-details`, html, "html");
         detailFailures.push({ code: r.code, error: issues.join("; ") });
-      } else {
-        details.set(r.code, parsedDetails);
       }
+      // Save every field whose source section was actually present. This
+      // preserves useful partial details and, in db.mjs, never overwrites an
+      // older known-good field merely because today's layout omitted it.
+      details.set(r.code, { values: parsedDetails, issues });
     } catch (e) {
       console.error(`  ! ${r.code} weeks failed:`, e.message);
       detailFailures.push({ code: r.code, error: e.message });
@@ -280,7 +283,27 @@ export async function runScrape({ dry = false, db, strict = false } = {}) {
     runId = startRun(_db, SOURCES.join(" | "));
     for (const r of rows) upsert(_db, runId, r);
     for (const w of weeks) upsertWeek(_db, w);
-    for (const [code, d] of details) setProductDetails(_db, code, d);
+    for (const [code, detail] of details) {
+      setProductDetails(_db, code, detail.values, detail.issues);
+    }
+    for (const failure of detailFailures) {
+      if (!details.has(failure.code)) {
+        markProductDetailsFailure(_db, failure.code, failure.error);
+      }
+      insertScrapeIssue(_db, runId, {
+        code: failure.code, stage: "details", severity: "warning", message: failure.error,
+      });
+    }
+    for (const failure of sourceFailures) {
+      insertScrapeIssue(_db, runId, {
+        stage: "source", severity: "error", source: failure.source, message: failure.error,
+      });
+    }
+    for (const warning of sourceWarnings) {
+      insertScrapeIssue(_db, runId, {
+        stage: "source", severity: "warning", source: warning.source, message: warning.warning,
+      });
+    }
     for (const snapshot of sourceSnapshots) insertSourceSnapshot(_db, runId, snapshot);
     finishRun(_db, runId, rows.length);
     _db.exec("COMMIT");

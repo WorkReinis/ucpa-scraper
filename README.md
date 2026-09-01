@@ -69,6 +69,18 @@ Then daily:
 
 `node src/report.mjs --moves` shows what changed since the previous run.
 
+To update a development checkout from the rolling `data` branch without
+overwriting newer local scrape history:
+
+```bash
+npm run data:pull
+```
+
+The command fetches and validates the remote database, checkpoints the local
+WAL, compares latest scrape timestamps, and keeps the replaced file as
+`ucpa.db.bak-data-pull-*`. Stop the local server first so Windows can replace
+the database file safely.
+
 ## Frontend
 
 ```bash

@@ -27,7 +27,7 @@ function googleFlightsUrl(d) {
 }
 
 function levelTier(level) {
-  if (!level) return level;
+  if (!level) return "Not specified";
   const parts = level.split(" - ");
   return parts.length > 1 ? parts.at(-1) : level;
 }
@@ -42,7 +42,7 @@ function priceBadge(d) {
 }
 
 function isRedundantStatus(status) {
-  return /^Only \d+ spot\(s\) left$/i.test(status);
+  return /^Only \d+ spot\(s\) left$/i.test(status) || status === "Sold out";
 }
 
 export default function WeekListing({ d, includeFlightCosts = false, compact = false, favorited = false, onToggleFavorite }) {
@@ -50,7 +50,8 @@ export default function WeekListing({ d, includeFlightCosts = false, compact = f
   const [pulse, setPulse] = useState(false);
   const detailsId = useId();
   const pBadge = priceBadge(d);
-  const seatsTier = d.seats_left <= 2 ? "critical" : d.seats_left <= 5 ? "low" : "ok";
+  const soldOut = d.availability_status === "sold_out" || d.seats_left <= 0;
+  const seatsTier = soldOut ? "critical" : d.seats_left <= 2 ? "critical" : d.seats_left <= 5 ? "low" : "ok";
   const hasFlight = Number.isFinite(d.flight_price);
   const totalPrice = hasFlight ? d.price + d.flight_price : d.price;
   const googleFlights = googleFlightsUrl(d);
@@ -121,7 +122,7 @@ export default function WeekListing({ d, includeFlightCosts = false, compact = f
         </div>
 
         <div className="meta-row">
-          <span className={`meta-item seats seats-${seatsTier}`}>{IconSeat}<span>{d.seats_left} seat{d.seats_left === 1 ? "" : "s"}</span></span>
+          <span className={`meta-item seats seats-${seatsTier}`}>{IconSeat}<span>{soldOut ? "Sold out" : `${d.seats_left} seat${d.seats_left === 1 ? "" : "s"}`}</span></span>
           <span className="meta-item">{IconCalendar}<span>{fmtDate(d.start_date)}</span></span>
           <span className="meta-item">{IconPin}<span>{d.resort} · {d.region}</span></span>
           <span className="meta-item">{IconLevel}<span>{levelTier(d.level)}</span></span>
@@ -175,6 +176,9 @@ export default function WeekListing({ d, includeFlightCosts = false, compact = f
             </div>
 
             <div className="detail-cols">
+              {["partial", "failed"].includes(d.details_status) && (
+                <div><h4>Product details</h4><p>Some details were unavailable from UCPA during the latest scrape.</p></div>
+              )}
               {d.includes.length > 0 && <div><h4>Included</h4><ul className="includes">{d.includes.map((item) => <li key={item}>{item}</li>)}</ul></div>}
               {d.excludes.length > 0 && <div><h4>Not included</h4><ul>{d.excludes.map((item) => <li key={item}>{item}</li>)}</ul></div>}
               {d.options.length > 0 && <div><h4>Add-on options</h4><ul>{d.options.map((item) => <li key={item}>{item}</li>)}</ul></div>}

@@ -75,7 +75,7 @@ export default function TripCost({ weeks, meta }) {
           <div className="meta-row">
             <span className="meta-item">{IconCalendar}<span>week of {fmtDate(d.start_date)}</span></span>
             <span className="meta-item">{IconPin}<span>{d.resort}</span></span>
-            <span className="meta-item">{IconLevel}<span>{d.level}</span></span>
+            <span className="meta-item">{IconLevel}<span>{d.level || "Not specified"}</span></span>
             <span className="meta-item">{IconClock}<span>{d.days}d / {d.nights}n</span></span>
           </div>
 

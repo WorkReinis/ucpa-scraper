@@ -59,6 +59,9 @@ CREATE TABLE IF NOT EXISTS product (
   -- values, see classifyInstruction() there.
   instruction_type     TEXT,
   image_url            TEXT,
+  details_status       TEXT NOT NULL DEFAULT 'unknown',
+  details_checked_at   TEXT,
+  details_error        TEXT,
   first_seen          TEXT,
   last_seen           TEXT
 );
@@ -220,6 +223,22 @@ CREATE TABLE IF NOT EXISTS source_snapshot (
   unparseable_count INTEGER NOT NULL,
   PRIMARY KEY (run_id, source_url)
 );
+
+-- Durable scrape warnings/errors. Workflow artifacts expire after 14 days;
+-- this append-only ledger keeps enough context to inspect long-term parser
+-- and source reliability directly from the database.
+CREATE TABLE IF NOT EXISTS scrape_issue (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id      INTEGER NOT NULL REFERENCES run(id),
+  code        TEXT REFERENCES product(code),
+  stage       TEXT NOT NULL,
+  severity    TEXT NOT NULL CHECK (severity IN ('warning', 'error')),
+  source      TEXT,
+  message     TEXT NOT NULL,
+  created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_scrape_issue_run ON scrape_issue(run_id, stage, severity);
+CREATE INDEX IF NOT EXISTS idx_scrape_issue_code ON scrape_issue(code, run_id);
 `;
 
 // Views hold no data of their own -- just saved queries -- so unlike the
@@ -315,7 +334,8 @@ SELECT
   p.url, p.title, p.activity, p.level, p.age_min, p.age_max,
   p.country, p.resort, p.region, p.days, p.nights,
   p.includes, p.excludes, p.options, p.accommodation,
-  p.instructor_hours, p.instruction_type, p.image_url
+  p.instructor_hours, p.instruction_type, p.image_url,
+  p.details_status, p.details_checked_at, p.details_error
 FROM v_week_current w
 JOIN product p ON p.code = w.code;
 
@@ -384,6 +404,15 @@ function migrateLegacyNames(db) {
     const cols = db.prepare("PRAGMA table_info(product)").all().map((c) => c.name);
     if (!cols.includes("image_url")) {
       db.exec("ALTER TABLE product ADD COLUMN image_url TEXT");
+    }
+    if (!cols.includes("details_status")) {
+      db.exec("ALTER TABLE product ADD COLUMN details_status TEXT NOT NULL DEFAULT 'unknown'");
+    }
+    if (!cols.includes("details_checked_at")) {
+      db.exec("ALTER TABLE product ADD COLUMN details_checked_at TEXT");
+    }
+    if (!cols.includes("details_error")) {
+      db.exec("ALTER TABLE product ADD COLUMN details_error TEXT");
     }
   }
   if (hasTable("flight_price")) {
@@ -625,16 +654,43 @@ export function finishFlightSearch(db, id, status, error = null) {
 
 /** Package composition (src/details.mjs) -- static per-product, so a plain
  *  UPDATE rather than an append-only insert. */
-export function setProductDetails(db, code, d) {
+export function setProductDetails(db, code, d, issues = []) {
+  const presence = d.field_presence ?? {};
+  const checkedAt = new Date().toISOString();
   db.prepare(
-    `UPDATE product SET includes=?, excludes=?, options=?, accommodation=?,
-                         encadrement=?, instructor_hours=?, instruction_type=?, image_url=?
+    `UPDATE product SET
+       includes=CASE WHEN ? THEN ? ELSE includes END,
+       excludes=CASE WHEN ? THEN ? ELSE excludes END,
+       options=CASE WHEN ? THEN ? ELSE options END,
+       accommodation=CASE WHEN ? THEN ? ELSE accommodation END,
+       encadrement=CASE WHEN ? THEN ? ELSE encadrement END,
+       instructor_hours=CASE WHEN ? THEN ? ELSE instructor_hours END,
+       instruction_type=CASE WHEN ? THEN ? ELSE instruction_type END,
+       image_url=CASE WHEN ? THEN ? ELSE image_url END,
+       details_status=?, details_checked_at=?, details_error=?
      WHERE code=?`
   ).run(
-    JSON.stringify(d.includes ?? []), JSON.stringify(d.excludes ?? []),
-    JSON.stringify(d.options ?? []), d.accommodation, d.encadrement,
-    d.instructor_hours, d.instruction_type, d.image_url, code
+    presence.includes ? 1 : 0, JSON.stringify(d.includes ?? []),
+    presence.excludes ? 1 : 0, JSON.stringify(d.excludes ?? []),
+    presence.options ? 1 : 0, JSON.stringify(d.options ?? []),
+    presence.accommodation ? 1 : 0, d.accommodation,
+    presence.encadrement ? 1 : 0, d.encadrement,
+    presence.encadrement ? 1 : 0, d.instructor_hours,
+    presence.encadrement ? 1 : 0, d.instruction_type,
+    presence.image_url ? 1 : 0, d.image_url,
+    issues.length ? "partial" : "complete", checkedAt,
+    issues.length ? issues.join("; ") : null,
+    code
   );
+}
+
+/** Record a page/reserve failure without clearing details from an earlier
+ * successful scrape. */
+export function markProductDetailsFailure(db, code, error) {
+  db.prepare(
+    `UPDATE product SET details_status='failed', details_checked_at=?, details_error=?
+     WHERE code=?`
+  ).run(new Date().toISOString(), error, code);
 }
 
 export function finishRun(db, runId, n) {
@@ -647,4 +703,14 @@ export function insertSourceSnapshot(db, runId, snapshot) {
        (run_id, source_url, product_count, candidate_count, unparseable_count)
      VALUES (?, ?, ?, ?, ?)`
   ).run(runId, snapshot.source, snapshot.count, snapshot.candidateCount, snapshot.unparseableCount);
+}
+
+export function insertScrapeIssue(db, runId, {
+  code = null, stage, severity = "warning", source = null, message,
+}) {
+  db.prepare(
+    `INSERT INTO scrape_issue
+       (run_id, code, stage, severity, source, message, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(runId, code, stage, severity, source, message, new Date().toISOString());
 }

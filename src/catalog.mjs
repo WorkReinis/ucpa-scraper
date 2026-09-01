@@ -68,9 +68,18 @@ function translateListing(row) {
     tier: tierOf(row.level),
     title: translate(row.title),
     activity: translate(row.activity),
-    level: translate(row.level),
+    // Missing expertise_level is legitimate source data. Give it an explicit
+    // label in every frontend instead of rendering a blank while retaining
+    // the raw NULL in product.level and its canonical "Unrated" tier.
+    level: row.level == null ? "Not specified" : translate(row.level),
     region: translate(row.region),
-    status: row.status != null ? translate(row.status) : row.status,
+    // UCPA sometimes omits status.message on fully booked offers. Stock is
+    // authoritative, so expose a computed presentation status without
+    // rewriting the raw NULL stored in week.status.
+    status: row.seats_left === 0 && row.status == null
+      ? "Sold out"
+      : (row.status != null ? translate(row.status) : row.status),
+    availability_status: row.seats_left === 0 ? "sold_out" : "available",
     includes: translateList(JSON.parse(row.includes || "[]")),
     excludes: translateList(JSON.parse(row.excludes || "[]")),
     options: translateList(JSON.parse(row.options || "[]")),
@@ -271,7 +280,9 @@ export function getFiltersData(db, { flightsConfigured = false } = {}) {
   return {
     resortsByRegion,
     activities: groupsPresent(distinct("activity")),
-    tiers: [...new Set(distinct("level").map(tierOf))].sort((a, b) => tierRank(a) - tierRank(b)),
+    // facetRows intentionally retains NULL levels so a bookable product whose
+    // source omitted expertise_level still contributes the Unrated filter.
+    tiers: [...new Set(facetRows.map((row) => tierOf(row.level)))].sort((a, b) => tierRank(a) - tierRank(b)),
     instructionTypes: distinct("instruction_type"),
     resortCounts: tally((r) => [r.resort]),
     activityCounts: tally((r) => groupsOf(r.activity)),
