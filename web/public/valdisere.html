@@ -1,0 +1,637 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Val d'Isère UCPA week — price, transport, snow and daylight for the group.">
+<meta name="robots" content="noindex">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<title>Val d'Isère Boarding Pass</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;450;500;600;700&display=swap">
+<style>
+/* Light-only, matching the app's own palette (web/src/index.css). */
+:root{
+  --text:#334155; --text-h:#1e293b; --muted:#7a7a7a;
+  --bg:#f5f8fd;
+  --page-gradient:radial-gradient(1100px 480px at 50% -260px, rgba(124,168,240,.22), transparent 70%), #f5f8fd;
+  --card:#ffffff;
+  --rule:rgba(15,23,42,.08);
+  --soft:#f0f0f0;
+  --hairline:#e0e0e0;
+  --accent:#5b8def; --accent-bg:#eef4ff; --accent-border:#cadeff;
+  --green:#16a34a; --green-bg:#dcfce7;
+  --amber:#d97706; --amber-bg:rgba(217,119,6,.12);
+  --band:#f1f5fd;
+  --seg-bg:#eaeef4; --seg-border:rgba(15,23,42,.06); --seg-active-bg:#ffffff; --seg-active-fg:#1e293b; --seg-fg:#64748b;
+  --logo-grad:linear-gradient(150deg,#8fc0ff,#5b8def);
+  --shadow:0 4px 16px -8px rgba(30,64,175,.18);
+  --shadow-lift:0 16px 40px -12px rgba(30,64,175,.28);
+  --sans:'Geist',system-ui,'Segoe UI',Roboto,sans-serif;
+  color-scheme:light;
+}
+
+*{box-sizing:border-box;}
+[hidden]{display:none!important;}
+body{
+  margin:0; background:var(--page-gradient); background-attachment:fixed;
+  font:15px/1.5 var(--sans); color:var(--text);
+  -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+}
+h1,h2,h3{font-family:var(--sans);font-weight:600;color:var(--text-h);margin:0;text-wrap:balance;}
+p{margin:0;}
+ul{margin:0;padding:0;list-style:none;}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:8px;}
+.num{font-variant-numeric:tabular-nums;}
+
+@keyframes cardIn{from{opacity:0;transform:translateY(8px);}}
+@media (prefers-reduced-motion:reduce){*{animation-duration:.001s!important;transition-duration:.001s!important;}}
+
+/* ---------- header ---------- */
+.hdr{position:sticky;top:0;z-index:40;background:rgba(245,248,253,.85);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-bottom:1px solid rgba(30,64,175,.1);}
+.hdr-row{max-width:1080px;margin:0 auto;padding:0 15px;min-height:56px;display:flex;align-items:center;justify-content:space-between;gap:12px;}
+.brand{display:flex;align-items:center;gap:11px;min-width:0;}
+.logo{width:30px;height:30px;border-radius:9px;overflow:hidden;display:flex;flex-shrink:0;box-shadow:0 6px 16px rgba(91,141,239,.35);}
+.logo svg{display:block;}
+.brand-copy{display:flex;flex-direction:column;min-width:0;line-height:1.2;}
+.brand-name{font-size:15px;font-weight:600;letter-spacing:-.3px;color:var(--text-h);white-space:nowrap;}
+.brand-sub{margin-top:2px;font-size:10.5px;color:var(--text);opacity:.68;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+
+/* ---------- page rhythm ---------- */
+.page{max-width:1080px;margin:0 auto;padding:14px 14px 56px;display:flex;flex-direction:column;gap:14px;}
+.cards{display:flex;flex-direction:column;gap:14px;}
+.panel{
+  display:flex;flex-direction:column;gap:13px;
+  padding:15px 15px 17px;border:1px solid var(--rule);border-radius:16px;
+  background:var(--card);box-shadow:var(--shadow);
+  animation:cardIn .4s cubic-bezier(.22,1,.36,1) both;
+}
+.panel-head{padding-bottom:10px;border-bottom:1px solid var(--rule);}
+.panel-head h2{font-size:15px;letter-spacing:-.01em;}
+.panel-head-row{display:flex;align-items:center;justify-content:space-between;gap:12px;}
+.seg-mini{padding:2px;border-radius:7px;}
+.seg-mini .seg-button{flex:0 0 auto;height:22px;padding:0 10px;border-radius:5px;font-size:11px;}
+[data-pane]{display:flex;flex-direction:column;gap:11px;}
+
+/* ---------- segmented control (web/src/App.css .seg-control) ---------- */
+.seg-control{display:flex;gap:2px;padding:3px;background:var(--seg-bg);border:1px solid var(--seg-border);border-radius:9px;}
+.seg-button{flex:1;height:30px;padding:0 11px;border:none;border-radius:6px;background:transparent;color:var(--seg-fg);font:inherit;font-size:12px;font-weight:500;white-space:nowrap;cursor:pointer;transition:background-color .15s ease,color .15s ease;}
+.seg-button.active{background:var(--seg-active-bg);color:var(--seg-active-fg);box-shadow:0 1px 3px rgba(0,0,0,.08);}
+.hero-block{display:flex;flex-direction:column;gap:10px;}
+
+/* ---------- ticket ---------- */
+.ticket{
+  position:relative;background:var(--card);border:1px solid var(--hairline);border-radius:16px;
+  overflow:hidden;box-shadow:var(--shadow);
+  animation:cardIn .4s cubic-bezier(.22,1,.36,1) both;
+  transition:border-color .2s ease,box-shadow .25s ease;
+}
+.ticket.picked{border-color:var(--accent);box-shadow:var(--shadow-lift);}
+.tk-main{display:grid;grid-template-columns:92px minmax(0,1fr);grid-template-rows:minmax(0,1fr) auto;}
+.tk-art{grid-row:1/-1;position:relative;overflow:hidden;
+  --sky:#d7dbea;--mid:#818ab8;--peak:#c9cde0;--ground:#a2a9cc;--detail:#6c76a5;--structure:#59638e;
+  background:linear-gradient(to bottom,var(--sky) 0 70%,var(--ground) 70% 100%);}
+.tk-art > svg{position:absolute;inset:0;width:100%;height:100%;display:block;}
+.a-mtn{fill:var(--mid);} .a-cap{fill:var(--peak);} .a-snow{fill:var(--ground);}
+.a-piste{fill:none;stroke:var(--detail);stroke-width:2;}
+.a-lift{fill:none;stroke:var(--structure);stroke-width:1.5;}
+.a-bld{fill:var(--structure);}
+.a-sprite{fill:#fff;opacity:.98;filter:drop-shadow(0 3px 4px rgba(27,50,67,.18));}
+
+.tk-body{min-width:0;padding:14px 15px 13px;}
+.tk-top{display:flex;align-items:center;gap:7px;min-width:0;}
+.tk-eyebrow{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:9.5px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;}
+.tk-stamp{flex-shrink:0;padding:3px 6px;border-radius:5px;background:var(--text-h);color:#fff;font-size:8.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;}
+.tk-stamp.alt{background:var(--accent);}
+.tk-hero{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:12px;margin-top:8px;}
+.tk-resort{font-size:19px;letter-spacing:-.02em;line-height:1.15;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.tk-region{margin-top:2px;color:var(--muted);font-size:11.5px;}
+.tk-when{text-align:right;}
+.lbl{display:block;color:var(--muted);font-size:8.5px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;}
+.tk-date{display:block;margin-top:2px;color:var(--text-h);font-size:14px;font-weight:600;white-space:nowrap;font-variant-numeric:tabular-nums;}
+.tk-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 14px;margin-top:13px;padding-top:12px;border-top:1px solid var(--soft);}
+.val{display:block;margin-top:3px;color:var(--text-h);font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums;}
+
+.tk-stub{grid-column:1/-1;display:flex;align-items:stretch;gap:14px;padding:14px 15px 15px;border-top:1px dashed var(--hairline);}
+.tk-stub-main{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:10px;}
+.tk-total{display:flex;align-items:baseline;gap:8px;}
+.tk-price{color:var(--text-h);font-size:27px;font-weight:600;letter-spacing:-.025em;line-height:1;font-variant-numeric:tabular-nums;}
+.tk-per{color:var(--muted);font-size:11px;}
+.tk-lines{width:100%;max-width:430px;display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:14px;padding-top:11px;border-top:1px solid var(--soft);}
+.tk-lines li{display:flex;flex-direction:column;align-items:flex-start;gap:3px;}
+.tk-k{color:var(--muted);font-size:9.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;}
+.tk-lines li b{color:var(--text-h);font-size:15px;font-weight:600;letter-spacing:-.01em;font-variant-numeric:tabular-nums;}
+.tk-warn{margin:3px 0 0;font-size:9px;padding:2px 5px;white-space:nowrap;}
+.bars{align-self:stretch;width:16px;flex-shrink:0;opacity:.14;color:var(--text-h);background-image:repeating-linear-gradient(180deg,currentColor 0 2px,transparent 2px 5px),repeating-linear-gradient(180deg,currentColor 0 1px,transparent 1px 8px),repeating-linear-gradient(180deg,currentColor 0 2px,transparent 2px 13px);}
+
+.tk-tear{position:relative;height:1px;background:repeating-linear-gradient(90deg,var(--hairline) 0 5px,transparent 5px 11px);}
+.notch{position:absolute;top:50%;width:14px;height:14px;transform:translateY(-50%);border:1px solid var(--hairline);border-radius:50%;background:var(--bg);}
+.notch.l{left:-8px;} .notch.r{right:-8px;}
+.tk-foot{background:#fafafc;padding:10px 14px;}
+.pick{
+  display:inline-flex;align-items:center;justify-content:center;gap:7px;width:100%;min-height:36px;
+  border:1px solid var(--accent-border);border-radius:9px;background:var(--card);color:var(--accent);
+  font:inherit;font-size:12px;font-weight:600;cursor:pointer;transition:background-color .15s ease,border-color .15s ease;
+}
+.pick:hover{background:var(--accent-bg);border-color:var(--accent);}
+.ticket.picked .pick{background:var(--accent);border-color:var(--accent);color:#fff;}
+.pick .on{display:none;} .ticket.picked .pick .on{display:inline-flex;}
+.ticket.picked .pick .off{display:none;}
+
+/* ---------- ruled money list (no card — deliberately flatter than the tickets) ---------- */
+.rows{display:flex;flex-direction:column;}
+.row{display:flex;align-items:center;gap:11px;padding:9px 2px;border-bottom:1px solid var(--rule);}
+.row:last-child{border-bottom:0;}
+.ico{flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;width:27px;height:27px;border-radius:8px;background:var(--accent-bg);color:var(--accent);}
+.row-copy{flex:1 1 auto;min-width:0;}
+.row-name{display:block;color:var(--text-h);font-size:14px;font-weight:500;}
+.row-sub{display:block;color:var(--muted);font-size:11.5px;margin-top:2px;line-height:1.35;}
+.row-amt{flex-shrink:0;color:var(--text-h);font-size:14px;font-weight:500;white-space:nowrap;font-variant-numeric:tabular-nums;}
+.row.total{margin-top:8px;padding:12px 13px;border:1px solid var(--accent-border);border-radius:13px;background:var(--accent-bg);}
+.row.total .ico{background:var(--accent);color:#fff;}
+.row.total .row-name{font-weight:600;}
+.row.total .row-amt{font-size:21px;font-weight:600;letter-spacing:-.02em;}
+.warn{display:inline-flex;align-items:center;gap:4px;margin-left:6px;white-space:nowrap;padding:1px 6px;border-radius:5px;background:var(--amber-bg);color:var(--amber);font-size:10px;font-weight:600;}
+
+/* ---------- plain included list ---------- */
+.incl{display:flex;flex-direction:column;gap:11px;}
+.incl li{display:flex;align-items:flex-start;gap:11px;color:var(--text-h);font-size:14px;line-height:1.4;}
+.incl svg{margin-top:2px;}
+.incl svg{flex-shrink:0;color:var(--accent);}
+
+/* ---------- snow panel (tinted band — the one section that isn't white) ---------- */
+.legend{display:flex;gap:14px;flex-wrap:wrap;}
+.legend span{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:11px;font-weight:500;}
+.sw{width:10px;height:10px;border-radius:3px;flex-shrink:0;}
+.chart{overflow-x:auto;}
+.chart svg{display:block;width:100%;max-width:440px;min-width:250px;height:auto;}
+.cap{margin-top:6px;color:var(--muted);font-size:11px;}
+.ax{stroke:rgba(15,23,42,.1);stroke-width:1;}
+.c-lbl{fill:#7a7a7a;font-family:var(--sans);font-size:10px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;}
+.c-val{fill:#1e293b;font-family:var(--sans);font-size:11px;font-weight:600;font-variant-numeric:tabular-nums;}
+.c-cap{fill:#7a7a7a;font-family:var(--sans);font-size:9.5px;}
+.backups{display:flex;flex-direction:column;gap:10px;}
+.backups li{display:flex;align-items:flex-start;gap:10px;color:var(--text-h);font-size:13px;line-height:1.45;}
+.backups svg{margin-top:2px;}
+.backups svg{flex-shrink:0;color:var(--green);}
+.expect{padding-top:14px;border-top:1px solid var(--accent-border);}
+
+/* ---------- chart cards ---------- */
+.g-ax{stroke:rgba(15,23,42,.12);stroke-width:1;}
+.g-lbl{fill:#1e293b;font-family:var(--sans);font-size:10.5px;font-weight:600;}
+.g-time{fill:#1e293b;font-family:var(--sans);font-size:10.5px;font-weight:600;font-variant-numeric:tabular-nums;}
+.g-x,.g-y{fill:#7a7a7a;font-family:var(--sans);font-size:9.5px;font-variant-numeric:tabular-nums;}
+.g-cap{fill:#7a7a7a;font-family:var(--sans);font-size:10px;}
+.g-row{fill:#7a7a7a;font-family:var(--sans);font-size:9px;font-weight:600;letter-spacing:.07em;}
+.t-side{fill:#7a7a7a;font-family:var(--sans);font-size:9px;font-weight:600;letter-spacing:.08em;}
+.t-count{fill:#fff;font-family:var(--sans);font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;}
+.t-key{fill:#334155;font-family:var(--sans);font-size:10.5px;}
+.g-mark{fill:#5b8def;font-family:var(--sans);font-size:8.5px;font-weight:700;letter-spacing:.09em;}
+.g-mk{fill:#1e293b;font-family:var(--sans);font-size:10.5px;font-weight:500;}
+.chart-sep{padding-top:14px;border-top:1px solid var(--accent-border);}
+.src{color:var(--muted);font-size:10.5px;line-height:1.45;}
+
+/* ---------- travel summary ---------- */
+.pane-note{color:var(--muted);font-size:11.5px;line-height:1.45;}
+.chips{display:flex;flex-wrap:wrap;gap:6px;}
+.chip{display:inline-flex;align-items:center;padding:4px 9px;border:1px solid var(--rule);border-radius:8px;background:#f4f7fc;color:var(--text-h);font-size:11px;font-weight:500;white-space:nowrap;}
+.rows{display:flex;flex-direction:column;}
+.row{display:flex;align-items:center;gap:8px;padding:8px 1px;border-bottom:1px solid var(--rule);}
+.row:last-child{border-bottom:0;}
+.row-name{color:var(--text-h);font-size:13px;}
+.row-amt{margin-left:auto;color:var(--text-h);font-size:13px;white-space:nowrap;font-variant-numeric:tabular-nums;}
+.row-total{border-top:1px solid var(--rule);}
+.row-total .row-name,.row-total .row-amt{color:var(--text-h);font-weight:600;}
+.tag{padding:2px 7px;border:1px solid var(--rule);border-radius:6px;background:#f2f5fa;color:var(--muted);font-size:10px;white-space:nowrap;}
+.tag-warn{border-color:rgba(217,119,6,.28);background:var(--amber-bg);color:var(--amber);font-weight:600;}
+.g-alt{fill:#7a7a7a;font-family:var(--sans);font-size:9.5px;font-variant-numeric:tabular-nums;}
+
+@media (min-width:780px){
+  /* Google-Keep style: cards flow down columns and keep an even gap
+     whatever their height, instead of stretching to a grid row. */
+  .cards{display:block;columns:2;column-gap:14px;}
+  .cards .panel,.cards .hero-block{margin:0 0 14px;break-inside:avoid;-webkit-column-break-inside:avoid;}
+}
+
+@media (min-width:640px){
+  .hdr-row{min-height:62px;}
+  .brand-name{font-size:16px;} .brand-sub{font-size:11px;}
+  .page{padding:20px 20px 72px;gap:18px;}
+  .panel{padding:19px 20px 21px;gap:15px;}
+  .panel-head h2{font-size:16px;}
+  .tk-main{grid-template-columns:132px minmax(0,1fr);}
+  .tk-body{padding:18px 20px 16px;}
+  .tk-resort{font-size:22px;} .tk-region{font-size:13px;}
+  .tk-eyebrow{font-size:11px;} .lbl{font-size:10px;}
+  .tk-date{font-size:17px;} .val{font-size:13px;}
+  .tk-facts{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 20px;margin-top:16px;padding-top:14px;}
+  .tk-stub{padding:16px 20px 18px;}
+  .tk-price{font-size:29px;}
+  .row-name{font-size:14px;} .row-amt{font-size:14px;}
+.row.total .row-amt{font-size:24px;}
+  .incl{display:grid;grid-template-columns:1fr 1fr;gap:13px 24px;}
+}
+</style>
+</head>
+<body>
+<header class="hdr">
+  <div class="hdr-row">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">
+        <svg width="30" height="30" viewBox="0 0 32 32">
+          <defs>
+            <linearGradient id="brandgrad" x1="5" y1="3" x2="27" y2="29" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#8fc0ff"/>
+              <stop offset="1" stop-color="#5b8def"/>
+            </linearGradient>
+          </defs>
+          <rect width="32" height="32" rx="9" fill="url(#brandgrad)"/>
+          <path d="M3.5 24.5 12.7 9.8l4.7 7.1 3.1-4.3 8 11.9h-25Z" fill="#fff" fill-opacity=".96"/>
+          <path d="m9.8 14.4 2.9-4.6 3.1 4.7-3-1.6-3 1.5Zm7.6 2.5 3.1-4.3 3 4.5-3-1.5-3.1 1.3Z" fill="#b8d7ff"/>
+        </svg>
+      </span>
+      <span class="brand-copy">
+        <span class="brand-name">UCPA Tracker</span>
+        <span class="brand-sub">Ski, board, and the flight to get there</span>
+      </span>
+    </div>
+  </div>
+</header>
+
+<main class="page">
+
+  <div class="cards">
+
+    <div class="hero-block">
+    <div class="seg-control week-toggle" role="group" aria-label="Which week">
+      <button type="button" class="seg-button" data-week="nov" aria-pressed="false">29 November</button>
+      <button type="button" class="seg-button active" data-week="dec" aria-pressed="true">6 December</button>
+    </div>
+
+    <article class="ticket hero-ticket">
+        <div class="tk-main">
+          <div class="tk-art">
+            <svg viewBox="0 0 137 188" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+              <path class="a-mtn" d="M-8 111 28 57l17 21 22-39 78 87H-8Z"/>
+              <path class="a-cap" d="m28 57 17 21 22-39 17 19-17-7-20 36-20-17-35 56H-8Z"/>
+              <path class="a-snow" d="M-8 138c35-14 72-9 153-32v82H-8Z"/>
+              <path class="a-piste" d="M-4 147c40-9 86-6 145-28M-4 158c39-8 84-5 145-27"/>
+              <path class="a-lift" d="M9 76 127 50M23 73v44M106 55v50M49 67v10h12V64M82 60v10h12V57"/>
+              <path class="a-bld" d="M104 118h24v15h-24zM101 118l15-11 15 11"/>
+            </svg>
+            <svg viewBox="0 0 137 188" preserveAspectRatio="xMidYMid meet" role="img" aria-label="ski and snowboard illustration">
+              <g class="a-sprite">
+                <svg x="-3" y="77" width="92" height="82" viewBox="0 0 576 512"><path d="M416 56a56 56 0 1 1 112 0 56 56 0 1 1-112 0zM2.7 300.9c6.1-11.8 20.6-16.3 32.4-10.2l197.8 102.7 62.3-87.2-82-92.2c-11-12.4-16.2-27.5-16.2-42.4l111.6 53.4 42.9 48.2c14.9 16.7 16.2 41.6 3.2 59.8l-64.4 90.2 128.3 66.6c13.6 7.1 29.8 7.2 43.6.3l15.2-7.6c11.9-5.9 26.3-1.1 32.2 10.7s1.1 26.3-10.7 32.2l-15.2 7.6c-27.5 13.7-59.9 13.5-87.2-.7L12.9 333.3C1.2 327.2-3.4 312.7 2.7 300.9zM103 49.6l18 8.7 8.7-17.4c4-7.9 13.6-11.1 21.5-7.2s11.1 13.6 7.2 21.5l-8.5 17 84.8 41 .4-.2 76.1-33.8c31.3-13.9 67.9-.7 83.2 29.9l28.9 57.8 68.7 27.5c16.4 6.6 24.4 25.2 17.8 41.6s-25.2 24.4-41.6 17.8L393.8 224c-10.9-4.4-19.8-12.6-25.1-23.1l-11.5-23.1c-16.4 9.4-25.9 14.8-28.5 16.3l-7.6-3.7-185.6-89.6-9.2 18.3c-4 7.9-13.6 11.1-21.5 7.2s-11.1-13.6-7.2-21.5l9-17.9-17.6-8.5C81.1 74.6 77.8 65 81.6 57S95 45.7 103 49.6z"/></svg>
+                <svg x="55" y="75" width="86" height="77" viewBox="0 0 576 512"><path d="M424.5 16a56 56 0 1 1 0 112 56 56 0 1 1 0-112zM166.4 45.5c10.2-14.4 30.2-17.9 44.6-7.7l272 192c14.4 10.2 17.9 30.2 7.7 44.6s-30.2 17.9-44.6 7.7l-92.2-65.1-62.2 53.3 32.1 26.7c18.2 15.2 28.8 37.7 28.8 61.5v87.8l77.5 15.2c6.2 1.2 12.6.9 18.7-.8l41.2-11.8c12.7-3.6 26 3.7 29.7 16.5s-3.7 26-16.5 29.7l-41.2 11.8c-13.4 3.8-27.4 4.4-41.1 1.8L87.1 443.3c-17.2-3.4-33-11.8-45.3-24.1L15.5 393c-9.4-9.4-9.4-24.6 0-33.9s24.6-9.4 33.9 0l26.2 26.2c5.6 5.6 12.8 9.4 20.6 11l64.2 12.6V285.2c0-27.7 12-54 32.8-72.2l69-60.4-88.2-62.3C159.6 80 156.2 60 166.4 45.5zm58.1 375.7 64 12.5v-75.3c0-4.7-2.1-9.3-5.8-12.3l-58.2-48.5v123.6z"/></svg>
+              </g>
+            </svg>
+          </div>
+
+          <div class="tk-body">
+            <div class="tk-top">
+              <span class="tk-eyebrow">Ski or snowboard</span>
+              <span class="tk-stamp" data-stamp>Week 2</span>
+            </div>
+            <div class="tk-hero">
+              <div>
+                <h3 class="tk-resort">Val d'Isère</h3>
+                <div class="tk-region">Northern Alps</div>
+              </div>
+              <div class="tk-when">
+                <span class="lbl">Week of</span>
+                <span class="tk-date" data-when>6 Dec 2026</span>
+              </div>
+            </div>
+            <div class="tk-facts">
+              <div><span class="lbl">Dates</span><span class="val" data-dates>6 – 12 Dec</span></div>
+              <div><span class="lbl" data-travel-label>Drive down</span><span class="val" data-travel-day>Sat 5 Dec</span></div>
+            </div>
+          </div>
+
+          <div class="tk-stub">
+            <div class="tk-stub-main">
+              <div class="tk-total">
+                <span class="tk-price" data-price>&#8364;955</span>
+                <span class="tk-per">per person</span>
+              </div>
+              <ul class="tk-lines" data-lines></ul>
+            </div>
+            <span class="bars" aria-hidden="true"></span>
+          </div>
+        </div>
+    </article>
+    </div>
+
+  <section class="panel">
+    <div class="panel-head"><h2>In the UCPA package</h2></div>
+    <ul class="incl">
+      <li><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 2.5v5.2a1.6 1.6 0 0 0 3.2 0V2.5M5.6 8v5.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M11.4 13.5V9.2h1.3c.2 0 .4-.2.3-.5l-.9-5.9c0-.2-.4-.3-.5-.1l-1.5 6c0 .3.1.5.4.5h.9" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>Full board, every meal</li>
+      <li><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2 4.5 14 2.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M4.2 4.1v3.2M11.3 2.7v3.2" stroke="currentColor" stroke-width="1.3"/><path d="M5.8 7.3h3.4v3.1H5.8zM7.5 13.6v-3.2" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>Val d'Isère + Tignes lift pass</li>
+      <li><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4.5 2.2v8.6M8 2.2v8.6M11.5 2.2v8.6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M2.5 13h11" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>Skis or a board</li>
+      <li><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 9v-1a5 5 0 0 1 10 0v1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><rect x="2" y="9" width="2.6" height="4" rx="1" stroke="currentColor" stroke-width="1.3"/><rect x="11.4" y="9" width="2.6" height="4" rx="1" stroke="currentColor" stroke-width="1.3"/></svg>Instruction, per your package</li>
+      <li><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2 11V7.5A1.5 1.5 0 0 1 3.5 6h9A1.5 1.5 0 0 1 14 7.5V11" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M2 11h12M4 6V4.5A1.5 1.5 0 0 1 5.5 3h5A1.5 1.5 0 0 1 12 4.5V6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>2, 4 and 8-bed rooms, shared bathrooms</li>
+    </ul>
+  </section>
+
+  <!-- PARKED: "What to bring" card. Uncomment to restore.
+  <section class="panel">
+    <div class="panel-head"><h2>What to bring</h2></div>
+    <ul class="incl">
+      <li><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2.6 10.4a5.4 5.4 0 0 1 10.8 0" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M1.8 10.4h12.4a1 1 0 0 1 0 2H1.8a1 1 0 0 1 0-2Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>Helmet</li>
+      <li><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="1.8" y="5.2" width="12.4" height="5.6" rx="2.6" stroke="currentColor" stroke-width="1.3"/><path d="M8 5.6v4.8" stroke="currentColor" stroke-width="1.3"/><path d="M1.8 7.4h-.9M14.2 7.4h.9" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>Goggles</li>
+      <li><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4.2 13.4V7.2a1.1 1.1 0 0 1 2.2 0V4a1.1 1.1 0 0 1 2.2 0v3.2a1.1 1.1 0 0 1 2.2 0v1.1l1.2.6v4.5Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>Gloves</li>
+      <li><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M5.6 2.4 3 3.8v3.1h1.6v6.7h6.8V6.9H13V3.8l-2.6-1.4a2.5 2.5 0 0 1-4.8 0Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>Thermals and ski socks</li>
+      <li><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="3.1" stroke="currentColor" stroke-width="1.4"/><path d="M8 1.6v1.6M8 12.8v1.6M1.6 8h1.6M12.8 8h1.6M3.5 3.5l1.1 1.1M11.4 11.4l1.1 1.1M12.5 3.5l-1.1 1.1M4.6 11.4l-1.1 1.1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>Sun cream and lip balm</li>
+      <li><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.6 11.8c1.3 0 1.3 1.2 2.6 1.2s1.3-1.2 2.6-1.2 1.3 1.2 2.6 1.2 1.3-1.2 2.6-1.2 1.3 1.2 2.4 1.2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.4 11V4.6a1.8 1.8 0 0 1 3.6 0v4.8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="10.9" cy="4.4" r="1.3" stroke="currentColor" stroke-width="1.3"/></svg>Swimwear, if we use the spa</li>
+      <li><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="1.8" y="3.4" width="12.4" height="9.2" rx="2" stroke="currentColor" stroke-width="1.3"/><circle cx="5.7" cy="7.4" r="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M3.4 11c.4-1.2 1.3-1.8 2.3-1.8s1.9.6 2.3 1.8M9.9 6.6h2.9M9.9 9.2h2.9" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>ID card or passport</li>
+      <li><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 1.8 13.4 4v4.1c0 3.2-2.2 5.4-5.4 6.1-3.2-.7-5.4-2.9-5.4-6.1V4Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M5.9 8.1 7.4 9.6l2.9-3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>Wintersport insurance</li>
+    </ul>
+  </section>
+  -->
+
+
+  <section class="panel">
+    <div class="panel-head panel-head-row">
+      <h2>Getting there</h2>
+      <div class="seg-control seg-mini" role="group" aria-label="How we travel">
+        <button type="button" class="seg-button active" data-mode="drive" aria-pressed="true">Drive</button>
+        <button type="button" class="seg-button" data-mode="fly" aria-pressed="false">Fly</button>
+      </div>
+    </div>
+
+    <div data-pane="drive">
+      <p class="pane-note">1,050 km each way · ~11 h · via Luxembourg</p>
+      <div class="rows">
+        <div class="row"><span class="row-name">Fuel</span><span class="row-amt">€200–290</span></div>
+        <div class="row"><span class="row-name">French tolls</span><span class="row-amt">€110–130</span></div>
+        <div class="row"><span class="row-name">Parking</span><span class="tag tag-warn">Can't be reserved</span><span class="row-amt">€60</span></div>
+        <div class="row row-total"><span class="row-name">Per person, 4 sharing</span><span class="row-amt">€95–120</span></div>
+      </div>
+    </div>
+
+    <div data-pane="fly" hidden>
+      <p class="pane-note">AMS → GVA · <span data-fdur>1h30</span> direct · <span data-fair>easyJet</span></p>
+      <div class="rows">
+        <div class="row"><span class="row-name">Return flight</span><span class="row-amt" data-fprice>€146</span></div>
+        <div class="row"><span class="row-name">Geneva transfer</span><span class="tag">~3h30</span><span class="row-amt">€110</span></div>
+        <div class="row row-total"><span class="row-name">Per person</span><span class="row-amt" data-ftotal>€255</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><h2>Snow outlook</h2></div>
+
+    <div class="legend">
+      <span><span class="sw" style="background:#8fb2d1"></span>Top of ski area</span>
+      <span><span class="sw" style="background:#cfe0ee"></span>Village</span>
+    </div>
+    <div class="chart">
+        <svg viewBox="0 0 320 148" role="img" aria-label="Average snow depth builds from 36 cm in November to a 196 cm peak in March at the top of the ski area; the trip week sits on the early rise.">
+          <line class="g-ax" x1="30" y1="112.0" x2="312" y2="112.0"/>
+          <text class="g-y" x="24" y="115.5" text-anchor="end">0</text>
+          <line class="g-ax" x1="30" y1="88.0" x2="312" y2="88.0" stroke-dasharray="2 5"/>
+          <text class="g-y" x="24" y="91.5" text-anchor="end">50</text>
+          <line class="g-ax" x1="30" y1="64.0" x2="312" y2="64.0" stroke-dasharray="2 5"/>
+          <text class="g-y" x="24" y="67.5" text-anchor="end">100</text>
+          <line class="g-ax" x1="30" y1="40.0" x2="312" y2="40.0" stroke-dasharray="2 5"/>
+          <text class="g-y" x="24" y="43.5" text-anchor="end">150</text>
+          <line class="g-ax" x1="30" y1="16.0" x2="312" y2="16.0" stroke-dasharray="2 5"/>
+          <text class="g-y" x="24" y="19.5" text-anchor="end">200</text>
+          <path d="M30.0 94.7 C39.4 89.1, 67.6 69.5, 86.4 61.1 C105.2 52.7, 124.0 50.5, 142.8 44.3 C161.6 38.2, 180.4 28.6, 199.2 24.2 C218.0 19.8, 236.8 18.1, 255.6 17.9 C274.4 17.8, 302.6 22.3, 312.0 23.2 L312 112 L30 112 Z" fill="#8fb2d1"/>
+          <path d="M30.0 108.6 C39.4 104.9, 67.6 92.3, 86.4 86.1 C105.2 79.8, 124.0 76.7, 142.8 71.2 C161.6 65.7, 180.4 56.6, 199.2 53.0 C218.0 49.3, 236.8 46.8, 255.6 49.1 C274.4 51.4, 302.6 63.9, 312.0 66.9 L312 112 L30 112 Z" fill="#cfe0ee"/>
+          <path d="M30.0 94.7 C39.4 89.1, 67.6 69.5, 86.4 61.1 C105.2 52.7, 124.0 50.5, 142.8 44.3 C161.6 38.2, 180.4 28.6, 199.2 24.2 C218.0 19.8, 236.8 18.1, 255.6 17.9 C274.4 17.8, 302.6 22.3, 312.0 23.2" fill="none" stroke="#5f8cb5" stroke-width="1.8"/>
+          <path d="M30.0 108.6 C39.4 104.9, 67.6 92.3, 86.4 86.1 C105.2 79.8, 124.0 76.7, 142.8 71.2 C161.6 65.7, 180.4 56.6, 199.2 53.0 C218.0 49.3, 236.8 46.8, 255.6 49.1 C274.4 51.4, 302.6 63.9, 312.0 66.9" fill="none" stroke="#9dbdd8" stroke-width="1.8"/>
+          <rect x="56.5" y="16" width="24.3" height="96" fill="rgba(91,141,239,.16)"/>
+          <line x1="56.5" y1="16" x2="56.5" y2="112" stroke="#5b8def" stroke-width="1.4"/>
+          <line x1="80.8" y1="16" x2="80.8" y2="112" stroke="#5b8def" stroke-width="1.4"/>
+          <text class="g-mark" x="68.6" y="12" text-anchor="middle">OUR WEEK</text>
+          <text class="g-x" x="30.0" y="128" text-anchor="start">NOV</text>
+          <text class="g-x" x="86.4" y="128" text-anchor="middle">DEC</text>
+          <text class="g-x" x="142.8" y="128" text-anchor="middle">JAN</text>
+          <text class="g-x" x="199.2" y="128" text-anchor="middle">FEB</text>
+          <text class="g-x" x="255.6" y="128" text-anchor="middle">MAR</text>
+          <text class="g-x" x="312.0" y="128" text-anchor="end">APR</text>
+          <text class="g-cap" x="30" y="144">Average depth, cm</text>
+        </svg>
+    </div>
+    <p class="src">Historic monthly averages for the resort.</p>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><h2>Where we can ski</h2></div>
+
+    <div class="chart">
+        <svg viewBox="0 0 320 190" role="img" aria-label="Height map of the ski area: Grande Motte glacier 3456 m, Pissaillas glacier 3197 m, Bellevarde 2827 m, Solaise 2563 m, and the village at 1850 m.">
+          <defs>
+            <linearGradient id="snowGrad" x1="0" y1="22" x2="0" y2="180" gradientUnits="userSpaceOnUse">
+              <stop offset="0" stop-color="#f6faff"/>
+              <stop offset="0.42" stop-color="#e2ecf9"/>
+              <stop offset="0.74" stop-color="#c2cfe1"/>
+              <stop offset="1" stop-color="#a6b3c6"/>
+            </linearGradient>
+          </defs>
+          <path d="M168 180 L256 30.8 L278 65.3 L296 54.3 L316 180 Z" fill="url(#snowGrad)"/>
+          <path d="M168 180 L256 30.8 L278 65.3 L296 54.3 L316 180 Z" fill="none" stroke="#8b9cb5" stroke-width="1.2" stroke-linejoin="round"/>
+          <line x1="150" y1="30.8" x2="256.0" y2="30.8" stroke="#9aa8bd" stroke-width="1" stroke-dasharray="1.5 2.5"/>
+          <circle cx="256.0" cy="30.8" r="3.4" fill="#5b8def" stroke="#fff" stroke-width="1.2"/>
+          <text class="g-mk" x="146" y="34.3" text-anchor="end">Grande Motte glacier<tspan class="g-alt">  3456 m</tspan></text>
+          <line x1="150" y1="52.8" x2="243.0" y2="52.8" stroke="#9aa8bd" stroke-width="1" stroke-dasharray="1.5 2.5"/>
+          <circle cx="243.0" cy="52.8" r="3.4" fill="#5b8def" stroke="#fff" stroke-width="1.2"/>
+          <text class="g-mk" x="146" y="56.3" text-anchor="end">Pissaillas glacier<tspan class="g-alt">  3197 m</tspan></text>
+          <line x1="150" y1="84.3" x2="224.5" y2="84.3" stroke="#9aa8bd" stroke-width="1" stroke-dasharray="1.5 2.5"/>
+          <circle cx="224.5" cy="84.3" r="3.4" fill="#5b8def" stroke="#fff" stroke-width="1.2"/>
+          <text class="g-mk" x="146" y="87.8" text-anchor="end">Bellevarde<tspan class="g-alt">  2827 m</tspan></text>
+          <line x1="150" y1="106.7" x2="211.2" y2="106.7" stroke="#9aa8bd" stroke-width="1" stroke-dasharray="1.5 2.5"/>
+          <circle cx="211.2" cy="106.7" r="3.4" fill="#5b8def" stroke="#fff" stroke-width="1.2"/>
+          <text class="g-mk" x="146" y="110.2" text-anchor="end">Solaise<tspan class="g-alt">  2563 m</tspan></text>
+          <line x1="150" y1="167.3" x2="175.5" y2="167.3" stroke="#9aa8bd" stroke-width="1" stroke-dasharray="1.5 2.5"/>
+          <circle cx="175.5" cy="167.3" r="3.4" fill="#7a8ba3" stroke="#fff" stroke-width="1.2"/>
+          <text class="g-mk" x="146" y="170.8" text-anchor="end">Village<tspan class="g-alt">  1850 m</tspan></text>
+        </svg>
+    </div>
+    <p class="src">Good skiing top and mid-mountain. Lower runs a coin flip; off-piste probably not in.</p>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><h2>Enough for everyone</h2></div>
+
+    <div class="chips">
+      <span class="chip">300 km of piste</span>
+      <span class="chip">78 lifts</span>
+      <span class="chip">154 runs</span>
+    </div>
+    <div class="chart">
+        <svg viewBox="0 0 320 80" role="img" aria-label="154 marked runs: 22 green, 61 blue, 46 red and 25 black — 83 easier runs and 71 harder ones.">
+          <text class="t-side" x="89.9" y="20" text-anchor="middle">83 EASIER</text>
+          <text class="t-side" x="241.9" y="20" text-anchor="middle">71 HARDER</text>
+          <path d="M8 30 L8 26 L171.8 26 L171.8 30" fill="none" stroke="rgba(15,23,42,.18)" stroke-width="1"/>
+          <path d="M171.8 30 L171.8 26 L312 26 L312 30" fill="none" stroke="rgba(15,23,42,.18)" stroke-width="1"/>
+
+          <defs><clipPath id="runclip"><rect x="8" y="44" width="304" height="28" rx="6"/></clipPath></defs>
+          <g clip-path="url(#runclip)">
+            <rect x="8.0" y="44" width="43.4" height="28" fill="#4a9d5f"/>
+            <rect x="51.4" y="44" width="120.4" height="28" fill="#3576cc"/>
+            <rect x="171.8" y="44" width="90.8" height="28" fill="#cf3f52"/>
+            <rect x="262.6" y="44" width="49.4" height="28" fill="#26313f"/>
+            <line x1="51.4" y1="44" x2="51.4" y2="72" stroke="#fff" stroke-width="1.5"/>
+            <line x1="171.8" y1="44" x2="171.8" y2="72" stroke="#fff" stroke-width="1.5"/>
+            <line x1="262.6" y1="44" x2="262.6" y2="72" stroke="#fff" stroke-width="1.5"/>
+          </g>
+          <text class="t-count" x="29.7" y="62" text-anchor="middle">22</text>
+          <text class="t-count" x="111.6" y="62" text-anchor="middle">61</text>
+          <text class="t-count" x="217.2" y="62" text-anchor="middle">46</text>
+          <text class="t-count" x="287.3" y="62" text-anchor="middle">25</text>
+
+        </svg>
+    </div>
+    <p class="src">Marked runs across the linked Tignes–Val d'Isère area.</p>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><h2>Light in the day</h2></div>
+    <div class="legend">
+        <span><span class="sw" style="background:#2b3d59"></span>Night</span>
+        <span><span class="sw" style="background:#5b7ea9"></span>Twilight</span>
+        <span><span class="sw" style="background:#fbf0d9;outline:1px solid rgba(15,23,42,.12);outline-offset:-1px"></span>Sun up</span>
+    </div>
+    <div class="chart">
+        <svg viewBox="0 0 320 120" role="img" aria-label="The sun is up from 07:52 to 16:50 and the lifts run from 09:00 to 16:45.">
+          <defs><clipPath id="bandclip"><rect x="8" y="22" width="304" height="27" rx="5"/></clipPath></defs>
+          <g clip-path="url(#bandclip)">
+            <rect x="8.0" y="22" width="77.3" height="27" fill="#2b3d59"/>
+            <rect x="85.3" y="22" width="7.6" height="27" fill="#3f5a80"/>
+            <rect x="92.9" y="22" width="7.8" height="27" fill="#5b7ea9"/>
+            <rect x="100.7" y="22" width="7.0" height="27" fill="#93b3d8"/>
+            <rect x="107.6" y="22" width="113.6" height="27" fill="#fbf0d9"/>
+            <rect x="221.2" y="22" width="7.2" height="27" fill="#93b3d8"/>
+            <rect x="228.4" y="22" width="7.8" height="27" fill="#5b7ea9"/>
+            <rect x="236.2" y="22" width="7.4" height="27" fill="#3f5a80"/>
+            <rect x="243.6" y="22" width="68.4" height="27" fill="#2b3d59"/>
+          </g>
+          <text class="g-row" x="8" y="15">DAYLIGHT</text>
+          <text class="g-time" x="107.6" y="15" text-anchor="middle">07:52</text>
+          <text class="g-time" x="221.2" y="15" text-anchor="middle">16:50</text>
+
+          <rect x="8" y="72" width="304" height="15" rx="4" fill="rgba(15,23,42,.07)"/>
+          <rect x="122.0" y="72" width="98.2" height="15" rx="4" fill="#5b8def"/>
+          <text class="g-row" x="8" y="65">LIFTS RUNNING</text>
+          <text class="g-time" x="122.0" y="65" text-anchor="middle">09:00</text>
+          <text class="g-time" x="220.2" y="65" text-anchor="middle">16:45</text>
+
+          <line class="g-ax" x1="8" y1="99" x2="312" y2="99"/>
+          <text class="g-x" x="8.0" y="112" text-anchor="start">00</text>
+          <text class="g-x" x="84.0" y="112" text-anchor="middle">06</text>
+          <text class="g-x" x="160.0" y="112" text-anchor="middle">12</text>
+          <text class="g-x" x="236.0" y="112" text-anchor="middle">18</text>
+          <text class="g-x" x="312.0" y="112" text-anchor="end">24</text>
+        </svg>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><h2>Temperature</h2></div>
+    <div class="legend">
+        <span><span class="sw" style="background:#5b8def"></span>Village, 1849 m</span>
+        <span><span class="sw" style="background:#3f5f8c"></span>Top of ski area, 3450 m</span>
+    </div>
+    <div class="chart">
+        <svg viewBox="0 0 320 142" role="img" aria-label="Typical December day: the village swings from about minus 7.5 Celsius at dawn to plus 0.6 in the afternoon; the top of the ski area stays between minus 18 and minus 10.">
+          <rect x="30" y="18" width="92.4" height="100" fill="rgba(15,23,42,.055)"/>
+          <rect x="227.8" y="18" width="84.2" height="100" fill="rgba(15,23,42,.055)"/>
+          <line class="g-ax" x1="30" y1="27.1" x2="312" y2="27.1"/>
+          <text class="g-y" x="24" y="30.6" text-anchor="end">0°</text>
+          <line class="g-ax" x1="30" y1="49.8" x2="312" y2="49.8" stroke-dasharray="2 5"/>
+          <text class="g-y" x="24" y="53.3" text-anchor="end">-5°</text>
+          <line class="g-ax" x1="30" y1="72.5" x2="312" y2="72.5" stroke-dasharray="2 5"/>
+          <text class="g-y" x="24" y="76.0" text-anchor="end">-10°</text>
+          <line class="g-ax" x1="30" y1="95.3" x2="312" y2="95.3" stroke-dasharray="2 5"/>
+          <text class="g-y" x="24" y="98.8" text-anchor="end">-15°</text>
+          <line class="g-ax" x1="30" y1="118.0" x2="312" y2="118.0" stroke-dasharray="2 5"/>
+          <text class="g-y" x="24" y="121.5" text-anchor="end">-20°</text>
+          <path d="M30.0 93.5 L35.9 95.1 L41.8 96.6 L47.6 98.1 L53.5 99.5 L59.4 100.8 L65.3 102.1 L71.1 103.3 L77.0 104.4 L82.9 105.3 L88.8 106.2 L94.6 106.9 L100.5 107.5 L106.4 107.9 L112.3 108.2 L118.1 108.4 L124.0 108.4 L129.9 107.5 L135.8 105.4 L141.6 102.4 L147.5 98.5 L153.4 94.1 L159.3 89.4 L165.1 84.8 L171.0 80.5 L176.9 76.8 L182.8 74.0 L188.6 72.2 L194.5 71.6 L200.4 71.7 L206.3 71.9 L212.1 72.3 L218.0 72.8 L223.9 73.4 L229.8 74.1 L235.6 75.0 L241.5 76.0 L247.4 77.1 L253.3 78.3 L259.1 79.6 L265.0 81.0 L270.9 82.4 L276.8 83.9 L282.6 85.5 L288.5 87.0 L294.4 88.6 L300.3 90.3 L306.1 91.9 L312.0 93.5" fill="none" stroke="#3f5f8c" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
+          <path d="M30.0 46.2 L35.9 47.8 L41.8 49.3 L47.6 50.8 L53.5 52.2 L59.4 53.6 L65.3 54.8 L71.1 56.0 L77.0 57.1 L82.9 58.0 L88.8 58.9 L94.6 59.6 L100.5 60.2 L106.4 60.7 L112.3 61.0 L118.1 61.1 L124.0 61.1 L129.9 60.2 L135.8 58.2 L141.6 55.1 L147.5 51.2 L153.4 46.8 L159.3 42.1 L165.1 37.5 L171.0 33.2 L176.9 29.5 L182.8 26.7 L188.6 25.0 L194.5 24.4 L200.4 24.4 L206.3 24.6 L212.1 25.0 L218.0 25.5 L223.9 26.1 L229.8 26.9 L235.6 27.7 L241.5 28.7 L247.4 29.8 L253.3 31.0 L259.1 32.3 L265.0 33.7 L270.9 35.1 L276.8 36.6 L282.6 38.2 L288.5 39.8 L294.4 41.4 L300.3 43.0 L306.1 44.6 L312.0 46.2" fill="none" stroke="#5b8def" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
+          <text class="g-x" x="30.0" y="134" text-anchor="start">00</text>
+          <text class="g-x" x="100.5" y="134" text-anchor="middle">06</text>
+          <text class="g-x" x="171.0" y="134" text-anchor="middle">12</text>
+          <text class="g-x" x="241.5" y="134" text-anchor="middle">18</text>
+          <text class="g-x" x="312.0" y="134" text-anchor="end">24</text>
+        </svg>
+    </div>
+    <p class="src">Météo-France 1991–2020 normals for the village.</p>
+  </section>
+  </div>
+
+</main>
+
+<script>
+(function(){
+  // Flight fares are the cheapest AMS-GVA round trips the scraper last quoted
+  // for each week, so they differ between the two options.
+  var WEEKS = {
+    nov: { stamp:"Opening week", when:"29 Nov 2026", dates:"29 Nov \u2013 5 Dec",
+           saturday:"Sat 28 Nov", flight:167, airline:"KLM", dur:"1h25" },
+    dec: { stamp:"Week 2", when:"6 Dec 2026", dates:"6 \u2013 12 Dec",
+           saturday:"Sat 5 Dec", flight:146, airline:"easyJet", dur:"1h30" }
+  };
+  var PACKAGE = 774, SAT_NIGHT = 70, DRIVE = 110, TRANSFER = 110;
+
+  var week = "dec", mode = "drive";
+  var $ = function(sel){ return document.querySelector(sel); };
+  var eur = function(n){ return "\u20ac" + n.toLocaleString("en-GB"); };
+  var approx = function(n){ return eur(Math.round(n / 5) * 5); };
+
+  function render(){
+    var w = WEEKS[week];
+    var flying = mode === "fly";
+
+    document.querySelectorAll("[data-week]").forEach(function(b){
+      var on = b.dataset.week === week;
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-pressed", String(on));
+    });
+    document.querySelectorAll("[data-mode]").forEach(function(b){
+      var on = b.dataset.mode === mode;
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-pressed", String(on));
+    });
+    $('[data-pane="drive"]').hidden = flying;
+    $('[data-pane="fly"]').hidden   = !flying;
+
+    $("[data-stamp]").textContent = w.stamp;
+    $("[data-when]").textContent  = w.when;
+    $("[data-dates]").textContent = w.dates;
+    $("[data-travel-label]").textContent = flying ? "Fly out" : "Drive down";
+    $("[data-travel-day]").textContent   = w.saturday;
+
+    var total = PACKAGE + SAT_NIGHT + (flying ? w.flight + TRANSFER : DRIVE);
+    $("[data-price]").textContent = approx(total);
+    var lines = flying
+      ? [["Package", PACKAGE], ["Sat night", SAT_NIGHT], ["Flight", w.flight], ["Transfer", TRANSFER]]
+      : [["Package", PACKAGE], ["Sat night", SAT_NIGHT], ["Drive", DRIVE]];
+    $("[data-lines]").innerHTML = lines
+      .map(function(l, i){
+        return "<li><span class=\"tk-k\">" + l[0] + "</span><b>" + eur(l[1]) + "</b>"
+             + (i === 0 ? "<span class=\"warn tk-warn\">+€86 after 10 Sept</span>" : "")
+             + "</li>";
+      })
+      .join("");
+
+    $("[data-fdur]").textContent   = w.dur;
+    $("[data-fair]").textContent   = w.airline;
+    $("[data-fprice]").textContent = eur(w.flight);
+    $("[data-ftotal]").textContent = approx(w.flight + TRANSFER);
+  }
+
+  document.querySelectorAll("[data-week]").forEach(function(b){
+    b.addEventListener("click", function(){ week = b.dataset.week; render(); });
+  });
+  document.querySelectorAll("[data-mode]").forEach(function(b){
+    b.addEventListener("click", function(){ mode = b.dataset.mode; render(); });
+  });
+  render();
+})();
+</script>
+</body>
+</html>
