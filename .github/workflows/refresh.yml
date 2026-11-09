@@ -66,7 +66,10 @@ jobs:
       # ORIGIN_GROUPS. An `&& '' || ...` expression cannot produce an empty
       # string in Actions because the empty branch is falsey.
       FLIGHT_ORIGIN_GROUPS: ${{ inputs.flight_origins }}
-      FLIGHT_PROVIDER: ${{ inputs.flight_provider == 'auto' && '' || inputs.flight_provider }}
+      # Repo variable FLIGHT_PROVIDER is a no-deploy kill switch for scheduled
+      # runs: `serpapi` pauses Apify, `off` pauses flight searches entirely.
+      # An explicit manual-dispatch provider choice still wins.
+      FLIGHT_PROVIDER: ${{ (inputs.flight_provider && inputs.flight_provider != 'auto') && inputs.flight_provider || vars.FLIGHT_PROVIDER }}
       SCRAPE_DIAGNOSTICS_DIR: .scrape-diagnostics
     steps:
       - uses: actions/checkout@v7
@@ -110,6 +113,11 @@ jobs:
         continue-on-error: true
         shell: bash
         run: |
+          if test "$FLIGHT_PROVIDER" = off; then
+            echo "::warning title=Flights paused::Repository variable FLIGHT_PROVIDER=off. Existing flight quotes stay in use."
+            echo "status=skipped (paused)" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           if test -z "$APIFY_KEY_1$APIFY_KEY_2$APIFY_KEY_3$APIFY_KEY_4$APIFY_KEY_5$APIFY_KEY_6$SERPAPI_KEY"; then
             echo "::warning title=Flights skipped::No flight provider configured (APIFY_KEY_1..6 or SERPAPI_KEY) in repository Actions secrets. Catalogue data will still be refreshed."
             echo "status=skipped (no provider configured)" >> "$GITHUB_OUTPUT"
