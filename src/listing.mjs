@@ -84,11 +84,27 @@ export function parseApiItem(item) {
   const code = productCode(item?.url ?? "");
   if (!code) return null;
 
-  // "France - Val d'Isère", "France - Argentière - Vallée du Mont Blanc", or
-  // bare "Queyras". Only the country prefix is stripped: resort names carry
-  // their own spaced hyphens, so splitting on " - " would truncate them.
+  // Two shapes seen from the API:
+  //   old: destination "France - Val d'Isère", region in geographical_landscape
+  //   new (since 2026-11-12): destination "Alpes du Nord - Val d'Isère" with
+  //        the region as a prefix, and geographical_landscape reduced to the
+  //        country ("France"), which is not a region.
+  // A bare destination ("Queyras") carries neither prefix. Only a known
+  // prefix is stripped: resort names carry their own spaced hyphens
+  // ("Argentière - Vallée du Mont Blanc"), so splitting on " - " would
+  // truncate them.
   const destination = (item.center_or_destination_name ?? "").trim();
-  const resort = destination.replace(/^France\s*-\s*/, "").trim() || null;
+  const landscape = (item.geographical_landscape ?? "").trim();
+  let resort = destination;
+  let region = landscape && landscape !== "France" ? landscape : null;
+  const prefixed = destination.match(/^(.+?)\s+-\s+(.+)$/);
+  if (prefixed && prefixed[1] === "France") {
+    resort = prefixed[2];
+  } else if (prefixed && KNOWN_REGIONS.includes(prefixed[1])) {
+    region = prefixed[1];
+    resort = prefixed[2];
+  }
+  resort = resort.trim() || null;
 
   const title = (item.product_name ?? "").trim();
   // Same retag parseCard() applies: UCPA's breadcrumb calls the dual-discipline
@@ -108,7 +124,7 @@ export function parseApiItem(item) {
     location: destination || null,
     country: "France",
     resort,
-    region: (item.geographical_landscape ?? "").trim() || null,
+    region,
     activity,
     level: (item.expertise_level ?? "").trim() || null,
     // The API prices in euros with cents (859.5); product/observation rows

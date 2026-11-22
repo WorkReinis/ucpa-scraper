@@ -25,16 +25,6 @@ on:
           - all
           - nl
           - uk
-      flight_provider:
-        description: Provider policy for a manual flight run
-        required: true
-        default: auto
-        type: choice
-        options:
-          - auto
-          - apify
-          - serpapi
-
 permissions:
   contents: write
   pages: write
@@ -47,7 +37,7 @@ concurrency:
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    # A cold flight refresh is ~105 actor runs; the 14-day return cache reduces
+    # A cold flight refresh is ~105 searches; the 14-day return cache reduces
     # normal fare-only cycles to ~70 before any exact-cell recovery searches.
     timeout-minutes: 180
     environment:
@@ -56,17 +46,10 @@ jobs:
     env:
       OPERATION: ${{ github.event_name == 'schedule' && 'both' || inputs.operation }}
       SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
-      APIFY_KEY_1: ${{ secrets.APIFY_KEY_1 }}
-      APIFY_KEY_2: ${{ secrets.APIFY_KEY_2 }}
-      APIFY_KEY_3: ${{ secrets.APIFY_KEY_3 }}
-      APIFY_KEY_4: ${{ secrets.APIFY_KEY_4 }}
-      APIFY_KEY_5: ${{ secrets.APIFY_KEY_5 }}
-      APIFY_KEY_6: ${{ secrets.APIFY_KEY_6 }}
       # Keep the explicit "all" sentinel: the CLI expands it to the active
       # ORIGIN_GROUPS. An `&& '' || ...` expression cannot produce an empty
       # string in Actions because the empty branch is falsey.
       FLIGHT_ORIGIN_GROUPS: ${{ inputs.flight_origins }}
-      FLIGHT_PROVIDER: ${{ inputs.flight_provider == 'auto' && '' || inputs.flight_provider }}
       SCRAPE_DIAGNOSTICS_DIR: .scrape-diagnostics
     steps:
       - uses: actions/checkout@v7
@@ -104,14 +87,14 @@ jobs:
         if: env.OPERATION == 'catalogue' || env.OPERATION == 'both'
         run: npm run scrape -- --strict
 
-      - name: Refresh flights when six-day quotes are due
+      - name: Refresh flights when quotes are due
         id: flights
         if: env.OPERATION == 'flights' || env.OPERATION == 'both'
         continue-on-error: true
         shell: bash
         run: |
-          if test -z "$APIFY_KEY_1$APIFY_KEY_2$APIFY_KEY_3$APIFY_KEY_4$APIFY_KEY_5$APIFY_KEY_6$SERPAPI_KEY"; then
-            echo "::warning title=Flights skipped::No flight provider configured (APIFY_KEY_1..6 or SERPAPI_KEY) in repository Actions secrets. Catalogue data will still be refreshed."
+          if test -z "$SERPAPI_KEY"; then
+            echo "::warning title=Flights skipped::SERPAPI_KEY is not configured in repository Actions secrets. Catalogue data will still be refreshed."
             echo "status=skipped (no provider configured)" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -122,6 +105,10 @@ jobs:
           if test -f .flight-summary.json; then
             flight_status="$(jq -r '.status // "failed"' .flight-summary.json)"
             echo "status=$flight_status" >> "$GITHUB_OUTPUT"
+            remaining="$(jq -r '.quotaRemaining // empty' .flight-summary.json)"
+            if test -n "$remaining" && test "$remaining" -lt 60; then
+              echo "::error title=SerpApi search budget nearly gone::$remaining searches left this billing month. A rotation batch spends roughly 40; quotes freeze when this reaches zero."
+            fi
           else
             echo "status=failed (no flight summary produced)" >> "$GITHUB_OUTPUT"
           fi
@@ -229,10 +216,10 @@ jobs:
             jq -r '"- Catalogue: \(if .error then "failed - " + .error else "passed" end)\n- Products: \(.products // 0)\n- Source failures: \(.sourceFailures // [] | length)\n- Source warnings: \(.sourceWarnings // [] | length)\n- Detail warnings: \(.detailFailures // [] | length)"' .scrape-summary.json >> "$GITHUB_STEP_SUMMARY"
           fi
           if test -f .refresh-summary.json; then
-            jq -r '"- Listings: \(.listings)\n- Last scrape: \(.lastScrapedAt)\n- Last flight check: \(.lastFlightsRefreshAt)\n- Flight quota: apify \(.flightQuota.apify.used)/\(.flightQuota.apify.limit), serpapi \(.flightQuota.serpapi.used)/\(.flightQuota.serpapi.limit)\n- Unknown category groups: \(.unknownCategoryGroups)"' .refresh-summary.json >> "$GITHUB_STEP_SUMMARY"
+            jq -r '"- Listings: \(.listings)\n- Last scrape: \(.lastScrapedAt)\n- Last flight check: \(.lastFlightsRefreshAt)\n- Flight quota: SerpApi \(.flightQuota.serpapi.used)/\(.flightQuota.serpapi.limit) (\(.flightQuota.serpapi.remaining // "?") left)\n- Unknown category groups: \(.unknownCategoryGroups)"' .refresh-summary.json >> "$GITHUB_STEP_SUMMARY"
           fi
           if test -f .flight-summary.json; then
-            jq -r '"- Flight refresh: \(.status // "failed")\n- Flight modes: \(.modesCompleted // 0)/\(.modesDue // 0) completed\n- Flight cells: \(.cellsStored // 0)/\(.cellsDue // 0) stored (\(.cellsUnpriced // 0) searched with no viable price, \(.unresolvedCells // 0) unresolved)\n- Provider searches: \(.searched // 0) successful, \(.providerAttempts // 0) attempted, \(.providerFallbacks // 0) fallbacks, \(.broadSearches // 0) broad, \(.targetedRetries // 0) targeted retries\n- Failures: \(.failed // 0) logical, \(.providerAttemptFailures // 0) provider attempts"' .flight-summary.json >> "$GITHUB_STEP_SUMMARY"
+            jq -r '"- Flight refresh: \(.status // "failed")\n- Flight modes: \(.modesCompleted // 0)/\(.modesDue // 0) completed\n- Flight cells: \(.cellsStored // 0)/\(.cellsDue // 0) stored (\(.cellsUnpriced // 0) searched with no viable price, \(.unresolvedCells // 0) unresolved)\n- SerpApi searches: \(.searched // 0) successful, \(.providerAttempts // 0) attempted, \(.broadSearches // 0) broad, \(.targetedRetries // 0) targeted retries\n- Failures: \(.failed // 0) logical, \(.providerAttemptFailures // 0) provider attempts"' .flight-summary.json >> "$GITHUB_STEP_SUMMARY"
           fi
           if test -f .flight-coverage.json; then
             jq -r '"- Current flight coverage: \(.current)/\(.expected) cells (\(.priced) priced, \(.searchedUnpriced) no viable result, \(.missing) missing)\n- Flight quality flags: \(.invalidDateCells) invalid-date, \(.excessiveStopCells) excessive-stop, \(.sparseCandidateCells) sparse-candidate cells"' .flight-coverage.json >> "$GITHUB_STEP_SUMMARY"

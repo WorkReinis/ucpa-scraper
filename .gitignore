@@ -13,3 +13,6 @@ web/public/data/
 .scrape-summary.json
 .claude/
 ucpa.db.bak-*
+
+# Local debugging logs (workflow watches, scrape traces)
+*.log

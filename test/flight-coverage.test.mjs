@@ -27,7 +27,7 @@ test("coverage report distinguishes current cells, legacy fallbacks, and missing
 
   insertFlightPrice(db, {
     origins: "AMS,RTM", dests: "CMF,GNB,GVA,LYS", gateway: "northern-alps",
-    origin_group: "nl", arrival_mode: "standard", provider: "apify",
+    origin_group: "nl", arrival_mode: "standard", provider: "serpapi",
     config_key: AIRPORT_CONFIG_KEY, outbound_date: start, return_date: end,
     price: 180, pricing_mode: "roundtrip", dep_airport: "AMS", arr_airport: "LYS",
     airline: "Fixture Air", stops: 0, duration_min: 95, details_scope: "both",

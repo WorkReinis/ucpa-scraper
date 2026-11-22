@@ -5,15 +5,16 @@ import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import {
-  finishRun, insertFlightPrice, insertSourceSnapshot, open, startRun,
+  finishRun, insertFlightPrice, insertSourceSnapshot, latestRunId, open, startRun,
 } from "../src/db.mjs";
+import { recordProviderOutages } from "../src/flights.mjs";
 import { AIRPORT_CONFIG_KEY } from "../src/airports.mjs";
 
 test("flight storage preserves both directions' segments and price halves", () => {
   const db = open(":memory:");
   insertFlightPrice(db, {
     origins: "AMS,RTM", dests: "LYS", gateway: "northern-alps",
-    origin_group: "nl", arrival_mode: "standard", provider: "apify",
+    origin_group: "nl", arrival_mode: "standard", provider: "serpapi",
     config_key: "coverage-v2",
     outbound_date: "2026-12-05", return_date: "2026-12-12",
     price: 161, price_outbound: 89, price_return: 72,
@@ -36,7 +37,7 @@ test("flight storage preserves both directions' segments and price halves", () =
   assert.deepEqual(JSON.parse(row.return_segments).map((segment) => segment.to), ["RTM"]);
   assert.equal(row.origin_group, "nl");
   assert.equal(row.arrival_mode, "standard");
-  assert.equal(row.provider, "apify");
+  assert.equal(row.provider, "serpapi");
   assert.equal(row.config_key, "coverage-v2");
   assert.equal(row.pricing_mode, "separate");
   assert.equal(row.price, 161);
@@ -130,7 +131,7 @@ test("a tuning-stale config_key doesn't orphan a separate-priced quote whose air
       pricing_mode, details_scope, dep_airport, arr_airport, return_dep_airport, return_arr_airport
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
-  const common = ["AMS,RTM", "LYS,GVA,GNB,CMF", "northern-alps", "nl", "standard", "apify"];
+  const common = ["AMS,RTM", "LYS,GVA,GNB,CMF", "northern-alps", "nl", "standard", "serpapi"];
 
   // A worse but strictly-shaped legacy round-trip fallback -- the only thing
   // that would show without the fix below.
@@ -157,7 +158,7 @@ test("a tuning-stale quote pinned to a since-retired airport stays orphaned, not
       pricing_mode, details_scope, dep_airport, arr_airport, return_dep_airport, return_arr_airport
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
-  const common = ["LHR,LGW,LTN,STN,LCY", "LYS,GVA,GNB,CMF,ZRH", "northern-alps", "uk", "standard", "apify"];
+  const common = ["LHR,LGW,LTN,STN,LCY", "LYS,GVA,GNB,CMF,ZRH", "northern-alps", "uk", "standard", "serpapi"];
 
   const legacyKey = "search:separate-one-way-pair-v5:...|northern-alps:CMF=2,GNB=2.25,GVA=3,LYS=3,ZRH=4.5|...";
   // Fetched before ZRH was cut, and it actually used ZRH -- still real and
@@ -183,4 +184,42 @@ test("catalogue metadata can be rolled back with the rest of a rejected run", ()
   db.exec("ROLLBACK");
   assert.equal(db.prepare("SELECT COUNT(*) n FROM run").get().n, 0);
   assert.equal(db.prepare("SELECT COUNT(*) n FROM source_snapshot").get().n, 0);
+});
+
+test("SerpApi exhaustion is recorded against the day's run", () => {
+  const db = open(":memory:");
+  const runId = startRun(db, "https://www.ucpa.com/test");
+  const written = recordProviderOutages(db, {
+    providerAttempts: 8,
+    providerUnavailable: { serpapi: 4 },
+    quotaByProvider: {
+      serpapi: { used: 225, limit: 225, remaining: 0 },
+    },
+  });
+  assert.equal(written, 1);
+  const rows = db.prepare(
+    "SELECT run_id, stage, severity, source, message FROM scrape_issue"
+  ).all();
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].run_id, runId);
+  assert.equal(rows[0].stage, "flights");
+  assert.equal(rows[0].severity, "warning");
+  assert.equal(rows[0].source, "serpapi");
+  assert.match(rows[0].message, /serpapi unavailable on 4 of 8 attempts/);
+});
+
+test("a healthy provider pool records nothing, and a never-scraped db is skipped", () => {
+  const healthy = open(":memory:");
+  startRun(healthy, "https://www.ucpa.com/test");
+  assert.equal(recordProviderOutages(healthy, {
+    providerAttempts: 4, providerUnavailable: { serpapi: 0 },
+  }), 0);
+  assert.equal(healthy.prepare("SELECT COUNT(*) AS n FROM scrape_issue").get().n, 0);
+
+  const fresh = open(":memory:");
+  assert.equal(latestRunId(fresh), null);
+  assert.equal(recordProviderOutages(fresh, {
+    providerAttempts: 2, providerUnavailable: { serpapi: 2 },
+  }), 0);
+  assert.equal(fresh.prepare("SELECT COUNT(*) AS n FROM scrape_issue").get().n, 0);
 });

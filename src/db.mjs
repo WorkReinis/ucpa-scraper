@@ -714,3 +714,11 @@ export function insertScrapeIssue(db, runId, {
      VALUES (?, ?, ?, ?, ?, ?, ?)`
   ).run(runId, code, stage, severity, source, message, new Date().toISOString());
 }
+
+/** Newest run row, or null on a database that has never been scraped.
+ *  scrape_issue.run_id is NOT NULL, so a stage that has no run of its own
+ *  (the flight refresh) attaches its issues to the run it shares a pipeline
+ *  day with. */
+export function latestRunId(db) {
+  return db.prepare("SELECT MAX(id) AS id FROM run").get()?.id ?? null;
+}

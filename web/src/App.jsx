@@ -203,7 +203,7 @@ export default function App() {
     time: "07:15",
     timeZone: "Europe/Riga",
     catalogueDays: 1,
-    flightDays: 6,
+    flightDays: 8,
   };
 
   if (error) return <div className="error">Failed to load: {error}</div>;

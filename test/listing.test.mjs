@@ -60,6 +60,25 @@ test("resort names keep the spaced hyphens they contain", () => {
   }
 });
 
+test("the region-prefixed destination shape (landscape = country) is parsed", () => {
+  const cases = [
+    ["Alpes du Nord - Val d'Isère", "Alpes du Nord", "Val d'Isère"],
+    ["Alpes du Nord - Argentière - Vallée du Mont Blanc", "Alpes du Nord", "Argentière - Vallée du Mont Blanc"],
+    ["Pyrénées - Guchen - Vallée de Saint-Lary", "Pyrénées", "Guchen - Vallée de Saint-Lary"],
+  ];
+  for (const [destination, region, resort] of cases) {
+    const row = parseApiItem({ ...item, center_or_destination_name: destination, geographical_landscape: "France" });
+    assert.equal(row.region, region);
+    assert.equal(row.resort, resort);
+    assert.deepEqual(productIssues(row), []);
+  }
+  // Bare destination + country-only landscape: no region, so it is quarantined
+  // (or repaired from history) rather than stored as region "France".
+  const bare = parseApiItem({ ...item, center_or_destination_name: "Queyras", geographical_landscape: "France" });
+  assert.equal(bare.region, null);
+  assert.equal(bare.resort, "Queyras");
+});
+
 test("cent-precision fares are rounded to whole euros before storage", () => {
   const row = parseApiItem({ ...item, price: 859.5, prediscountPrice: 955.01 });
   assert.equal(row.price, 860);

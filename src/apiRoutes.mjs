@@ -60,7 +60,7 @@ export function createApiApp() {
   });
 
   // Same shape as /api/scrape: one at a time, request blocks until done.
-  // ~25-40 SerpApi searches on a cold season. The rolling six-day freshness
+  // ~25-40 SerpApi searches on a cold season. The rolling freshness
   // window and monthly quota in src/flights.mjs do the real throttling.
   let refreshingFlights = false;
   app.post("/api/flights/refresh", async (req, res) => {

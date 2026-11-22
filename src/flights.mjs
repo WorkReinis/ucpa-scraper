@@ -1,7 +1,6 @@
 // node src/flights.mjs -> refresh flight quotes for upcoming weeks
 //
-// Google Flights via the provider seam in src/providers/ (Apify actor
-// primary, SerpApi fallback). Every displayed itinerary is a genuine bundled
+// Google Flights via SerpApi. Every displayed itinerary is a genuine bundled
 // round trip: one search per arrival mode, covering the whole origin x
 // gateway matrix at once, priced by the provider as a single fare (real
 // bundle discounts included -- often cheaper than two separate one-ways on
@@ -17,11 +16,11 @@
 // the policy only checks time windows.
 //
 // Quotes land append-only in flight_price (src/db.mjs). The flight_search
-// ledger keeps successful quotes fresh for six days, allows no more than two
+// ledger keeps successful quotes fresh for FLIGHT_REFRESH_DAYS, allows no more than two
 // attempts per (pair, mode) in that rolling window, and enforces a monthly
 // ceiling per provider.
 //
-// Needs APIFY_KEY_1.. and/or SERPAPI_KEY in the environment.
+// Needs SERPAPI_KEY in the environment.
 
 import { fileURLToPath } from "node:url";
 import { writeFileSync } from "node:fs";
@@ -30,6 +29,8 @@ import {
   insertFlightPrice,
   startFlightSearch,
   finishFlightSearch,
+  insertScrapeIssue,
+  latestRunId,
 } from "./db.mjs";
 import { writeDiagnostic } from "./diagnostics.mjs";
 import { wholePrice } from "./validation.mjs";
@@ -44,7 +45,13 @@ import {
 import { MAX_FLIGHT_STOPS } from "./flight-config.mjs";
 
 export const MONTHLY_SEARCH_LIMIT = 225; // SerpApi free-tier ceiling
-export const FLIGHT_REFRESH_DAYS = 6;
+// Widened 6 -> 8 (2026-09): SerpApi's 225 free searches are the entire
+// monthly budget. Measured demand at the 6-day cadence was ~8.6 searches a
+// day (~260-300/month) -- over the cap, which is what left August with 97
+// "run out of searches" failures and no quotes at all. 8 days costs ~25%
+// fewer rotation searches (~195/month) and fits. Deliberately not part of
+// AIRPORT_CONFIG_KEY, so changing it re-quotes nothing.
+export const FLIGHT_REFRESH_DAYS = 8;
 // Disabled (2026-07): confirmed live that a "no dataset items" failure is
 // transient actor flakiness, not a genuine no-service route -- a bare retry
 // of the exact same cell succeeded immediately. Capping retries at 2 per
@@ -70,11 +77,9 @@ export const ARRIVAL_MODES = [
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-export function flightPolicy({ monthlyAttempts, recentAttempts, hasFreshQuote, provider = "serpapi" }) {
+export function flightPolicy({ monthlyAttempts, recentAttempts, hasFreshQuote }) {
   if (hasFreshQuote) return "fresh_quote";
-  // Only SerpApi has a real monthly ceiling to gate on -- Apify's is live
-  // account credit, checked at call time, not a count agreed in advance.
-  if (provider !== "apify" && monthlyAttempts >= MONTHLY_SEARCH_LIMIT) return "monthly_quota";
+  if (monthlyAttempts >= MONTHLY_SEARCH_LIMIT) return "monthly_quota";
   if (recentAttempts >= MAX_ATTEMPTS_PER_PAIR_WINDOW) return "recent_attempts";
   return "search";
 }
@@ -385,6 +390,31 @@ export function mergeOriginCoverage(cells, recovered, originGroup, gateways) {
   return merged;
 }
 
+/** Persist a durable note when SerpApi is exhausted. Workflow artifacts
+ * expire after 14 days and the flight refresh has no run row of its own, so
+ * the note attaches to the catalogue run it shares a pipeline day with. It
+ * is skipped entirely on a database that has never been scraped. */
+export function recordProviderOutages(db, summary) {
+  const outages = Object.entries(summary.providerUnavailable ?? {})
+    .filter(([, count]) => count > 0);
+  if (!outages.length) return 0;
+  const runId = latestRunId(db);
+  if (runId === null) return 0;
+  for (const [provider, count] of outages) {
+    const quota = summary.quotaByProvider?.[provider];
+    const remaining = quota?.remaining;
+    insertScrapeIssue(db, runId, {
+      stage: "flights",
+      severity: "warning",
+      source: provider,
+      message: `${provider} unavailable on ${count} of ${summary.providerAttempts} attempts`
+        + " (out of credit or monthly quota)"
+        + (remaining === null || remaining === undefined ? "" : `; ${remaining} searches left`),
+    });
+  }
+  return outages.length;
+}
+
 /**
  * Quote every distinct upcoming bookable week, in both arrival modes, that
  * doesn't already have a fresh quote for every (origin group x gateway)
@@ -406,7 +436,7 @@ export async function runFlightRefresh({
 } = {}) {
   const providers = providerNames ?? configuredProviders();
   if (!providers.length) {
-    throw new Error("no flight provider configured -- set APIFY_KEY_1.. or SERPAPI_KEY");
+    throw new Error("no flight provider configured -- set SERPAPI_KEY");
   }
   const primaryProvider = providers[0];
   const requestedOriginIds = originGroupIds?.length
@@ -495,17 +525,8 @@ export async function runFlightRefresh({
   );
   const freshnessWindow = `-${FLIGHT_REFRESH_DAYS} days`;
 
-  // Infinity for apify (no self-imposed ceiling) is correct for the gating
-  // comparisons below, but a bare Infinity is the wrong thing to put in any
-  // written/reported field: JSON.stringify silently turns it into `null`,
-  // which means an in-memory Infinity and a freshly-parsed-from-disk null
-  // look identical when printed but are NOT `===` or deepEqual -- exactly
-  // what verify:static caught by re-computing this live and comparing
-  // objects directly, not stringified ones. reportedLimit/reportedRemaining
-  // make that `null` explicit up front instead of relying on the coercion.
-  const quotaLimitFor = (provider) => provider === "apify" ? Infinity : MONTHLY_SEARCH_LIMIT;
-  const reportedLimit = (limit) => Number.isFinite(limit) ? limit : null;
-  const reportedRemaining = (limit, used) => Number.isFinite(limit) ? Math.max(limit - used, 0) : null;
+  const quotaLimitFor = () => MONTHLY_SEARCH_LIMIT;
+  const reportedRemaining = (used) => Math.max(MONTHLY_SEARCH_LIMIT - used, 0);
 
   const summary = {
     pairs: pairs.length,
@@ -526,12 +547,15 @@ export async function runFlightRefresh({
     recentAttemptSkipped: 0,
     provider: primaryProvider,
     originGroups: requestedOriginIds,
-    quotaLimit: reportedLimit(quotaLimitFor(primaryProvider)),
+    quotaLimit: MONTHLY_SEARCH_LIMIT,
     quotaUsed: monthlyAttempts[primaryProvider],
     quotaExhausted: false,
     providerAttempts: 0,
     providerAttemptFailures: 0,
     providerFallbacks: 0,
+    // Per provider: attempts that failed because the account was out of
+    // credit or quota, as opposed to a search that simply found nothing.
+    providerUnavailable: Object.fromEntries(providers.map((provider) => [provider, 0])),
     errors: [],
   };
 
@@ -585,8 +609,9 @@ export async function runFlightRefresh({
         summary.providerAttemptFailures++;
         failedProviders++;
         lastError = error;
-        if (/run out of searches|below reserve|no .* has remaining credit/i.test(error.message)) {
+        if (/run out of searches/i.test(error.message)) {
           unavailableProviders++;
+          summary.providerUnavailable[provider]++;
         }
         console.error(`  ! provider ${provider} failed:`, error.message);
       }
@@ -631,7 +656,6 @@ export async function runFlightRefresh({
           flightDate, end_date, AIRPORT_CONFIG_KEY, "outbound", primaryProvider, freshnessWindow
         ).n,
         hasFreshQuote,
-        provider: availableProvider ?? primaryProvider,
       });
       if (policy === "search") staleModes.push({ ...mode, flightDate });
       else {
@@ -872,11 +896,11 @@ export async function runFlightRefresh({
     }
   }
   summary.quotaUsed = monthlyAttempts[primaryProvider];
-  summary.quotaRemaining = reportedRemaining(quotaLimitFor(primaryProvider), summary.quotaUsed);
+  summary.quotaRemaining = reportedRemaining(summary.quotaUsed);
   summary.quotaByProvider = Object.fromEntries(providers.map((provider) => [provider, {
     used: monthlyAttempts[provider],
-    limit: reportedLimit(quotaLimitFor(provider)),
-    remaining: reportedRemaining(quotaLimitFor(provider), monthlyAttempts[provider]),
+    limit: MONTHLY_SEARCH_LIMIT,
+    remaining: reportedRemaining(monthlyAttempts[provider]),
   }]));
   summary.cellsMissing = Math.max(summary.cellsDue - summary.cellsStored, 0);
   summary.unresolvedCells = summary.cellsUnpriced + summary.cellsMissing;
@@ -884,6 +908,7 @@ export async function runFlightRefresh({
   summary.status = summary.complete
     ? (summary.modesDue === 0 ? "fresh" : "success")
     : "partial";
+  recordProviderOutages(_db, summary);
   return summary;
 }
 
