@@ -43,10 +43,13 @@ export function inspectDatabase(dbPath) {
   }
 }
 
-function runGit(args, options = {}) {
+export function runGit(args, options = {}) {
   const result = spawnSync("git", args, {
     cwd: options.cwd,
-    encoding: options.encoding ?? "utf8",
+    // `encoding: null` is the caller asking for a Buffer (the database blob
+    // is binary). `??` would swallow that null and hand back utf8-mangled
+    // text, so the option has to be tested for presence, not truthiness.
+    encoding: Object.hasOwn(options, "encoding") ? options.encoding : "utf8",
     maxBuffer: MAX_GIT_OUTPUT,
   });
   if (result.error) throw result.error;

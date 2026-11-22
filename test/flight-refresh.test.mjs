@@ -51,7 +51,7 @@ test("refresh recovers an origin market omitted by the broad flight matrix", asy
       ? [itinerary("LTN", "LYS", 130, outboundDate, "07:15", "08:50")]
       : [itinerary("AMS", "LYS", 170, outboundDate, "07:00", "08:35")];
     return {
-      provider: "apify",
+      provider: "serpapi",
       secrets: [],
       raw: {
         search_parameters: { engine: "google_flights" },
@@ -63,7 +63,7 @@ test("refresh recovers an origin market omitted by the broad flight matrix", asy
 
   const summary = await runFlightRefresh({
     db,
-    providerNames: ["apify"],
+    providerNames: ["serpapi"],
     searchProvider,
     delay: async () => {},
     // This test is about uk-market recovery, not the separate
@@ -105,7 +105,7 @@ test("refresh recovers an origin market omitted by the broad flight matrix", asy
   assert.ok(rows.every((row) => row.config_key === AIRPORT_CONFIG_KEY));
   const freshSummary = await runFlightRefresh({
     db,
-    providerNames: ["apify"],
+    providerNames: ["serpapi"],
     searchProvider: async () => { throw new Error("fresh quotes must not search"); },
     delay: async () => {},
   });
@@ -114,7 +114,6 @@ test("refresh recovers an origin market omitted by the broad flight matrix", asy
   assert.equal(freshSummary.searched, 0);
   db.close();
 });
-
 test("one cell's failed recovery search doesn't cost every other cell in the same leg", async () => {
   // uk is entirely absent from the broad response and its own recovery
   // search always fails -- nl is fully healthy throughout. recoverMissingCoverage()
@@ -128,7 +127,7 @@ test("one cell's failed recovery search doesn't cost every other cell in the sam
     calls++;
     if (originIds === "LHR,LGW,LTN,STN") throw new Error("fixture provider failure");
     return {
-      provider: "apify",
+      provider: "serpapi",
       secrets: [],
       raw: {
         search_parameters: { engine: "google_flights" },
@@ -140,7 +139,7 @@ test("one cell's failed recovery search doesn't cost every other cell in the sam
 
   const summary = await runFlightRefresh({
     db,
-    providerNames: ["apify"],
+    providerNames: ["serpapi"],
     searchProvider,
     delay: async () => {},
     // About leg-level failure isolation, not the separate
@@ -229,7 +228,7 @@ test("refresh retries a deeper exact route when broad flights all miss the windo
       ? itinerary("AMS", "LYS", 170, outboundDate, "07:00", "08:35")
       : itinerary("AMS", "LYS", 260, outboundDate, "20:30", "22:05");
     return {
-      provider: "apify",
+      provider: "serpapi",
       secrets: [],
       raw: {
         search_parameters: { engine: "google_flights" },
@@ -241,7 +240,7 @@ test("refresh retries a deeper exact route when broad flights all miss the windo
 
   const summary = await runFlightRefresh({
     db,
-    providerNames: ["apify"],
+    providerNames: ["serpapi"],
     originGroupIds: ["nl"],
     searchProvider,
     delay: async () => {},
@@ -274,8 +273,8 @@ test("a thin gateway airport recovers a real, cheaper fare the broad search drop
   // search that removed GVA/LYS from competition.
   const db = fixtureDb();
   const calls = [];
-  const apifyRaw = (best_flights) => ({
-    provider: "apify",
+  const serpApiRaw = (best_flights) => ({
+    provider: "serpapi",
     secrets: [],
     raw: { search_parameters: { engine: "google_flights" }, best_flights, other_flights: [] },
   });
@@ -283,10 +282,10 @@ test("a thin gateway airport recovers a real, cheaper fare the broad search drop
     calls.push({ originIds, destIds, outboundDate });
     // The narrow single-airport retry this test is about: GNB, isolated.
     if (destIds === "GNB") {
-      return apifyRaw([itinerary("AMS", "GNB", 230, outboundDate, "07:00", "08:35")]);
+      return serpApiRaw([itinerary("AMS", "GNB", 230, outboundDate, "07:00", "08:35")]);
     }
     // Broad round-trip search: GVA-dominant, GNB entirely absent.
-    return apifyRaw([
+    return serpApiRaw([
       itinerary("AMS", "GVA", 280, outboundDate, "08:00", "09:35"),
       itinerary("AMS", "GVA", 290, outboundDate, "10:00", "11:35"),
       itinerary("AMS", "LYS", 300, outboundDate, "09:00", "10:35"),
@@ -294,7 +293,7 @@ test("a thin gateway airport recovers a real, cheaper fare the broad search drop
   };
 
   const summary = await runFlightRefresh({
-    db, providerNames: ["apify"], originGroupIds: ["nl"], searchProvider, delay: async () => {},
+    db, providerNames: ["serpapi"], originGroupIds: ["nl"], searchProvider, delay: async () => {},
   });
 
   assert.equal(summary.complete, true);
@@ -322,7 +321,7 @@ test("checkThinAirports: false skips the thin-airport pass entirely", async () =
   const searchProvider = async ({ destIds, outboundDate }) => {
     calls.push({ destIds });
     return {
-      provider: "apify",
+      provider: "serpapi",
       secrets: [],
       raw: {
         search_parameters: { engine: "google_flights" },
@@ -333,103 +332,13 @@ test("checkThinAirports: false skips the thin-airport pass entirely", async () =
   };
 
   const summary = await runFlightRefresh({
-    db, providerNames: ["apify"], originGroupIds: ["nl"], searchProvider, delay: async () => {},
+    db, providerNames: ["serpapi"], originGroupIds: ["nl"], searchProvider, delay: async () => {},
     checkThinAirports: false,
   });
 
   assert.equal(summary.complete, true);
   assert.equal(summary.recoverySearches, 0);
   assert.ok(calls.every((call) => call.destIds !== "GNB"));
-  db.close();
-});
-
-test("fallback requests are ledgered against the provider that was actually called", async () => {
-  const db = fixtureDb();
-  const searchProvider = async ({ outboundDate }, provider) => {
-    if (provider === "apify") throw new Error("fixture Apify outage");
-    return {
-      provider: "serpapi", secrets: [],
-      raw: {
-        search_parameters: { engine: "google_flights" },
-        best_flights: [
-          itinerary("AMS", "LYS", 170, outboundDate, "07:00", "08:35"),
-          itinerary("LHR", "LYS", 130, outboundDate, "07:15", "08:50"),
-        ],
-        other_flights: [],
-      },
-    };
-  };
-
-  const summary = await runFlightRefresh({
-    // About provider-fallback ledgering, not the separate
-    // thinnest-gateway-airport pass -- this fixture's LYS-only mock would
-    // otherwise trip that unrelated check too.
-    db, providerNames: ["apify", "serpapi"], searchProvider, delay: async () => {},
-    checkThinAirports: false,
-  });
-  assert.equal(summary.complete, true);
-  // One round-trip search per arrival mode (no separate return leg any more).
-  assert.equal(summary.searched, 2);
-  assert.equal(summary.providerAttempts, 4);
-  assert.equal(summary.providerAttemptFailures, 2);
-  assert.equal(summary.providerFallbacks, 2);
-  const ledger = db.prepare(
-    "SELECT provider, status, COUNT(*) n FROM flight_search GROUP BY provider, status ORDER BY provider, status"
-  ).all().map((row) => ({ ...row }));
-  assert.deepEqual(ledger, [
-    { provider: "apify", status: "failed", n: 2 },
-    { provider: "serpapi", status: "success", n: 2 },
-  ]);
-  db.close();
-});
-
-test("an exhausted fallback does not turn a transient primary failure into global exhaustion", async () => {
-  const db = fixtureDb();
-  const failed = await runFlightRefresh({
-    db,
-    providerNames: ["apify", "serpapi"],
-    originGroupIds: ["nl"],
-    searchProvider: async (_params, provider) => {
-      if (provider === "apify") throw new Error("HTTP 502 fixture");
-      throw new Error("Your account has run out of searches.");
-    },
-    delay: async () => {},
-  });
-
-  assert.equal(failed.quotaExhausted, false);
-  // Each arrival mode is now an independent round-trip search -- one mode's
-  // providers being exhausted no longer skips the other mode entirely, so
-  // both modes get their own full (apify, serpapi) attempt.
-  assert.equal(failed.providerAttempts, 4);
-  assert.equal(failed.status, "partial");
-
-  const calls = [];
-  const recovered = await runFlightRefresh({
-    db,
-    providerNames: ["apify", "serpapi"],
-    originGroupIds: ["nl"],
-    searchProvider: async ({ outboundDate }, provider) => {
-      calls.push({ provider });
-      return {
-        provider,
-        secrets: [],
-        raw: {
-          search_parameters: { engine: "google_flights" },
-          best_flights: [itinerary("AMS", "LYS", 170, outboundDate, "07:00", "08:35")],
-          other_flights: [],
-        },
-      };
-    },
-    delay: async () => {},
-    // About exhaustion/fallback recovery, not the separate
-    // thinnest-gateway-airport pass -- this fixture's LYS-only mock would
-    // otherwise also trip that unrelated check too.
-    checkThinAirports: false,
-  });
-
-  assert.equal(recovered.complete, true);
-  assert.equal(recovered.providerAttempts, 2);
-  assert.ok(calls.every((call) => call.provider === "apify"));
   db.close();
 });
 

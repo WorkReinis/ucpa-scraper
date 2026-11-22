@@ -57,7 +57,7 @@ export default function TripCost({ weeks, meta }) {
   return (
     <>
       <div className="results-toolbar"><div className="muted small">{rows.length} trips priced</div></div>
-      {!configured && <p className="flight-banner">Flight quotes need a provider key. Set <code>APIFY_KEY_1</code> (apify.com) or <code>SERPAPI_KEY</code> (serpapi.com) in the server&apos;s environment and restart it.</p>}
+      {!configured && <p className="flight-banner">Flight quotes need a provider key. Set <code>SERPAPI_KEY</code> (serpapi.com) in the server&apos;s environment and restart it.</p>}
       {rows.length === 0 && <p className="muted">No weeks match these filters.</p>}
 
       {rows.map((d) => (

@@ -7,7 +7,7 @@ import {
   startRun, upsert, upsertWeek,
 } from "../src/db.mjs";
 import { parseDetails } from "../src/details.mjs";
-import { compareLatestRuns } from "../scripts/pull-data.mjs";
+import { compareLatestRuns, runGit } from "../scripts/pull-data.mjs";
 
 const product = {
   code: "missinglevel1",
@@ -158,4 +158,13 @@ test("safe data pull only replaces an older local scrape", () => {
   assert.equal(compareLatestRuns(local, { id: 9, started_at: "2026-08-29T10:00:00Z" }), "local-newer");
   assert.equal(compareLatestRuns(null, local), "remote-newer");
   assert.throws(() => compareLatestRuns(local, null), /no completed scrape/);
+});
+
+test("a git command asked for binary output gets a Buffer, not utf8-mangled text", () => {
+  // The database blob on the data branch is binary: reading it as utf8
+  // corrupts it and leaves `Buffer.isBuffer` false, which pullData reports
+  // as "origin/data:ucpa.db was empty". `encoding: null` must survive the
+  // option defaulting rather than being coalesced away.
+  assert.ok(Buffer.isBuffer(runGit(["--version"], { encoding: null }).stdout));
+  assert.equal(typeof runGit(["--version"]).stdout, "string");
 });

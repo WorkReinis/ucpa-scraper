@@ -245,26 +245,20 @@ export function getFiltersData(db, { flightsConfigured = false } = {}) {
   const attemptedThisMonth = (provider) => db.prepare(
     "SELECT COUNT(*) n FROM flight_search WHERE billing_month = strftime('%Y-%m', 'now') AND provider = ?"
   ).get(provider).n;
-  const quotaFor = (provider, limit) => {
+  const quotaFor = (provider) => {
     const recordedUsed = attemptedThisMonth(provider);
-    // No self-imposed ceiling (Apify): report null directly rather than a
-    // raw Infinity that only *looks* like null once JSON-serialized -- the
-    // two are different values in memory, and verify:static compares this
-    // live object against the one read straight back from disk, not a
-    // re-stringified one.
-    if (limit == null) return { limit: null, used: recordedUsed, remaining: null };
-    const externallyExhausted = provider === "serpapi" && Boolean(db.prepare(
+    const externallyExhausted = Boolean(db.prepare(
       `SELECT 1 FROM flight_search
        WHERE billing_month = strftime('%Y-%m', 'now')
          AND provider = 'serpapi' AND status = 'failed'
          AND lower(COALESCE(error, '')) LIKE '%run out of searches%'
        LIMIT 1`
     ).get());
-    const used = externallyExhausted ? limit : recordedUsed;
+    const used = externallyExhausted ? MONTHLY_SEARCH_LIMIT : recordedUsed;
     return {
-      limit,
+      limit: MONTHLY_SEARCH_LIMIT,
       used,
-      remaining: Math.max(limit - used, 0),
+      remaining: Math.max(MONTHLY_SEARCH_LIMIT - used, 0),
       ...(externallyExhausted ? { exhausted: true, recordedUsed } : {}),
     };
   };
@@ -309,11 +303,7 @@ export function getFiltersData(db, { flightsConfigured = false } = {}) {
     },
     originGroups: ORIGIN_GROUPS.map(({ id, label, airports }) => ({ id, label, airports })),
     flightQuota: {
-      // Apify has no self-imposed run-count ceiling -- its real constraint
-      // is live account credit, not a count agreed in advance. Only
-      // SerpApi's actual free-tier limit is a real number here.
-      apify: quotaFor("apify", null),
-      serpapi: quotaFor("serpapi", MONTHLY_SEARCH_LIMIT),
+      serpapi: quotaFor("serpapi"),
     },
     changelog: getChangelogData(db),
     unknownCategories: findUnknownCategories(db),

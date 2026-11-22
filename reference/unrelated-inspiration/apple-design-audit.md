@@ -1,3 +1,7 @@
+> **Note:** this is unrelated Apple.com marketing-site design research, kept
+> here only as inspiration reference. It has no bearing on this app's actual
+> UI/design system — do not treat its tokens/components as this project's spec.
+
 ---
 version: alpha
 name: Apple-design-analysis

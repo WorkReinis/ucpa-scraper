@@ -228,55 +228,6 @@ function itineraryFor(from, to, price, departAt, arriveAt) {
   };
 }
 
-test("an apify actor dataset item parses identically to a SerpApi response", () => {
-  // The actor mirrors SerpApi's google_flights schema; the known differences
-  // are price_insights: null and extra top-level keys (all_flights,
-  // booking_options). parseFlightResponse must consume it unchanged --
-  // this fixture locks that provider-agnostic guarantee.
-  const apifyItem = {
-    search_parameters: { engine: "google_flights" },
-    search_metadata: { status: "Success" },
-    search_timestamp: "2026-07-19T12:00:00Z",
-    page_number: 1,
-    price_insights: null,
-    all_flights: [],
-    booking_options: [],
-    best_flights: [{
-      price: 224,
-      total_duration: 95,
-      flights: [{
-        departure_airport: { id: "AMS", time: "2026-12-18 09:35" },
-        arrival_airport: { id: "LYS", time: "2026-12-18 11:10" },
-        airline: "KLM", flight_number: "KL 1427", duration: 95,
-      }],
-    }],
-    other_flights: [{
-      price: 133,
-      total_duration: 105,
-      flights: [{
-        departure_airport: { id: "LTN", time: "2026-12-18 07:00" },
-        arrival_airport: { id: "LYS", time: "2026-12-18 09:45" },
-        airline: "Wizz Air", flight_number: "W9 5425", duration: 105,
-      }],
-    }],
-  };
-  const nl = parseFlightResponse(apifyItem, {
-    outboundDate: "2026-12-18", returnDate: "2026-12-27",
-    gateway: "northern-alps", dests: ["CMF", "GNB", "GVA", "LYS"],
-    originGroup: "nl", originAirports: ["AMS", "RTM"],
-  });
-  assert.equal(nl.price, 224);
-  assert.equal(nl.dep_airport, "AMS");
-  assert.equal(nl.price_level, null); // price_insights is null on Apify rows
-  const uk = parseFlightResponse(apifyItem, {
-    outboundDate: "2026-12-18", returnDate: "2026-12-27",
-    gateway: "northern-alps", dests: ["CMF", "GNB", "GVA", "LYS"],
-    originGroup: "uk", originAirports: ["LHR", "LGW", "LTN", "STN", "LCY"],
-  });
-  assert.equal(uk.price, 133);
-  assert.equal(uk.airline, "Wizz Air");
-});
-
 test("flight parser rejects an unrecognized or structurally broken response", () => {
   assert.throws(
     () => parseFlightResponse({}, { outboundDate: "2026-12-05", returnDate: "2026-12-12" }),
